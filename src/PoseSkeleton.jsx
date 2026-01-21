@@ -37,7 +37,7 @@ export default function PoseSkeleton({ onPoseUpdate }) {
 
       // 繪製身體骨架與手部線條
       if (results.poseLandmarks) {
-        drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS, { color: "#FFFFFF44", lineWidth: 2 });
+        drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS, { color: "#ebe8e8", lineWidth: 2 });
       }
       if (results.leftHandLandmarks) {
         drawConnectors(ctx, results.leftHandLandmarks, HAND_CONNECTIONS, { color: "white", lineWidth: 1 });
