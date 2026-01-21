@@ -47,7 +47,7 @@ export default function App() {
             style={{ zIndex: 20, borderRadius: '20px', background: 'rgba(0,0,0,0.3)' }}
             onClick={() => setShowPlayer(!showPlayer)}
           >
-            🎵 {showPlayer ? "隱藏設定面板" : "音樂設定"}
+           🎵 {showPlayer ? "Hide Player" : "Music Settings"}
           </button>
 
           <div className="position-absolute bottom-0 start-0 m-3 shadow-lg rounded overflow-hidden border border-light" 
