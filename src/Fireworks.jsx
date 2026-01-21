@@ -1,103 +1,85 @@
 // Fireworks.jsx
 import React, { useRef, useEffect } from "react";
+import { Holistic, POSE_CONNECTIONS, HAND_CONNECTIONS } from "@mediapipe/holistic";
+import { Camera } from "@mediapipe/camera_utils";
+import { drawConnectors } from "@mediapipe/drawing_utils";
 
-class Particle {
-  constructor(x, y, color) {
-    this.x = x;
-    this.y = y;
-    this.color = color;
-    // 隨機爆炸速度與方向
-    const angle = Math.random() * Math.PI * 2;
-    const force = Math.random() * 4 + 1;
-    this.vx = Math.cos(angle) * force;
-    this.vy = Math.sin(angle) * force;
-    this.alpha = 1; // 透明度，用來做淡出
-    this.decay = Math.random() * 0.02 + 0.015; // 消失速度
-  }
-
-  update() {
-    this.x += this.vx;
-    this.y += this.vy;
-    this.vy += 0.05; // 重力效果
-    this.alpha -= this.decay;
-  }
-
-  draw(ctx) {
-    ctx.save();
-    ctx.globalAlpha = this.alpha;
-    ctx.fillStyle = this.color;
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, 2, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-  }
-}
-
-export default function Fireworks({ poseData }) {
+export default function PoseSkeleton({ onPoseUpdate }) {
+  const videoRef = useRef(null);
   const canvasRef = useRef(null);
-  const particles = useRef([]); // 儲存所有畫面上的粒子
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d");
-    let animationFrameId;
+    const holistic = new Holistic({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${file}`,
+    });
 
-    const render = () => {
-      
-      ctx.fillStyle = "rgba(0, 0, 0, 0.2)";
+    holistic.setOptions({
+      modelComplexity: 1,      // 0 為最速，1 為平衡
+      smoothLandmarks: true,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5,
+      refineLandmarks: true,   
+    });
+
+    holistic.onResults((results) => {
+      if (!canvasRef.current) return;
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext("2d");
+
+      ctx.save();
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "black";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      if (poseData) {
-        const config = [
-          { data: poseData.head, color: "#FF0000" },      // 紅
-          { data: poseData.rightHand, color: "#FFA500" }, // 橙
-          { data: poseData.rightKnee, color: "#0000FF" }, // 藍
-          { data: poseData.leftKnee, color: "#00FF00" },  // 綠
-          { data: poseData.leftHand, color: "#800080" },  // 紫
-        ];
+      // 鏡像模式（繪製用）
+      ctx.translate(canvas.width, 0);
+      ctx.scale(-1, 1);
 
-        config.forEach(({ data, color }) => {
-          if (data && data.visibility > 0.5) {
-            const x = data.x * canvas.width;
-            const y = data.y * canvas.height;
+      // 繪製身體骨架與手部線條
+      if (results.poseLandmarks) {
+        drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS, { color: "#FFFFFF44", lineWidth: 2 });
+      }
+      if (results.leftHandLandmarks) {
+        drawConnectors(ctx, results.leftHandLandmarks, HAND_CONNECTIONS, { color: "white", lineWidth: 1 });
+      }
+      if (results.rightHandLandmarks) {
+        drawConnectors(ctx, results.rightHandLandmarks, HAND_CONNECTIONS, { color: "white", lineWidth: 1 });
+      }
 
-            // 每次偵測到動作，產生 5 個新粒子
-            for (let i = 0; i < 5; i++) {
-              particles.current.push(new Particle(x, y, color));
-            }
-          }
+      // 鏡像轉換並回傳座標給父組件
+      if (onPoseUpdate) {
+        const flip = (lm) => (lm ? { x: 1 - lm.x, y: lm.y, visibility: lm.visibility ?? 1 } : null);
+
+        onPoseUpdate({
+          head: flip(results.poseLandmarks?.[0]),
+          // 取食指尖 (Index Tip)偵測不到則回退至手腕 (Wrist)
+          leftHand: flip(results.leftHandLandmarks?.[8] || results.poseLandmarks?.[15]),
+          rightHand: flip(results.rightHandLandmarks?.[8] || results.poseLandmarks?.[16]),
+          leftKnee: flip(results.poseLandmarks?.[25]),
+          rightKnee: flip(results.poseLandmarks?.[26]),
         });
       }
+      ctx.restore();
+    });
 
-      // 更新與繪製粒子
-      particles.current.forEach((p, index) => {
-        p.update();
-        p.draw(ctx);
-        // 移除看不見的粒子
-        if (p.alpha <= 0) {
-          particles.current.splice(index, 1);
-        }
+    if (videoRef.current) {
+      const camera = new Camera(videoRef.current, {
+        onFrame: async () => {
+          await holistic.send({ image: videoRef.current });
+        },
+        width: 640,
+        height: 480,
       });
+      camera.start();
+    }
 
-      animationFrameId = requestAnimationFrame(render);
-    };
+    return () => holistic.close();
+  }, [onPoseUpdate]);
 
-    render();
-    return () => cancelAnimationFrame(animationFrameId);
-  }, [poseData]);
-
-  // 響應式畫布大小
-  useEffect(() => {
-    const handleResize = () => {
-      if (canvasRef.current && canvasRef.current.parentElement) {
-        canvasRef.current.width = canvasRef.current.parentElement.clientWidth;
-        canvasRef.current.height = canvasRef.current.parentElement.clientHeight;
-      }
-    };
-    window.addEventListener("resize", handleResize);
-    handleResize();
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
-
-  return <canvas ref={canvasRef} style={{ display: "block" }} />;
+  return (
+    <div style={{ position: "relative", width: "100%", height: "100%", background: "black" }}>
+      <video ref={videoRef} style={{ display: "none" }} playsInline />
+      <canvas ref={canvasRef} width={640} height={480} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+    </div>
+  );
 }

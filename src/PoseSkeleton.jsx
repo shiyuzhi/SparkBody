@@ -1,9 +1,9 @@
 import React, { useRef, useEffect } from "react";
-import { Holistic, POSE_CONNECTIONS } from "@mediapipe/holistic";
+import { Holistic, POSE_CONNECTIONS, HAND_CONNECTIONS } from "@mediapipe/holistic";
 import { Camera } from "@mediapipe/camera_utils";
 import { drawConnectors } from "@mediapipe/drawing_utils";
 
-export default function PoseSkeleton({ onPoseUpdate }) { // 接收父組件傳來的 function
+export default function PoseSkeleton({ onPoseUpdate }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
 
@@ -13,42 +13,51 @@ export default function PoseSkeleton({ onPoseUpdate }) { // 接收父組件傳�
     });
 
     holistic.setOptions({
-      modelComplexity: 1,
+      modelComplexity: 1,      // 0 為最速，1 為平衡
       smoothLandmarks: true,
       minDetectionConfidence: 0.5,
       minTrackingConfidence: 0.5,
+      refineLandmarks: true,   // 強化面部與手部細節
     });
 
     holistic.onResults((results) => {
       if (!canvasRef.current) return;
-      
       const canvas = canvasRef.current;
       const ctx = canvas.getContext("2d");
 
-      // 1. 繪製黑色背景
       ctx.save();
+      // 清除背景並設為黑色
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.fillStyle = "black";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      // 2. 檢查偵測結果
-      if (results.poseLandmarks) {
-        // 畫純白骨架線 (不要畫紅點圖)
-        drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS, {
-          color: "white", 
-          lineWidth: 2,
-        });
+      // 鏡像模式（繪製用）
+      ctx.translate(canvas.width, 0);
+      ctx.scale(-1, 1);
 
-        // 3. 提取指定的 5 個關鍵點座標並回傳給 Fireworks
-        if (onPoseUpdate) {
-          onPoseUpdate({
-            head: results.poseLandmarks[0],      // 鼻子
-            rightHand: results.poseLandmarks[16], // 右手腕
-            leftHand: results.poseLandmarks[15],  // 左手腕
-            rightKnee: results.poseLandmarks[26], // 右膝
-            leftKnee: results.poseLandmarks[25],  // 左膝
-          });
-        }
+      // 繪製身體骨架與手部線條
+      if (results.poseLandmarks) {
+        drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS, { color: "#FFFFFF44", lineWidth: 2 });
+      }
+      if (results.leftHandLandmarks) {
+        drawConnectors(ctx, results.leftHandLandmarks, HAND_CONNECTIONS, { color: "white", lineWidth: 1 });
+      }
+      if (results.rightHandLandmarks) {
+        drawConnectors(ctx, results.rightHandLandmarks, HAND_CONNECTIONS, { color: "white", lineWidth: 1 });
+      }
+
+      // 鏡像轉換並回傳座標給父組件
+      if (onPoseUpdate) {
+        const flip = (lm) => (lm ? { x: 1 - lm.x, y: lm.y, visibility: lm.visibility ?? 1 } : null);
+
+        onPoseUpdate({
+          head: flip(results.poseLandmarks?.[0]),
+          // 優先取食指尖 (Index Tip)，若偵測不到則回退至手腕 (Wrist)
+          leftHand: flip(results.leftHandLandmarks?.[8] || results.poseLandmarks?.[15]),
+          rightHand: flip(results.rightHandLandmarks?.[8] || results.poseLandmarks?.[16]),
+          leftKnee: flip(results.poseLandmarks?.[25]),
+          rightKnee: flip(results.poseLandmarks?.[26]),
+        });
       }
       ctx.restore();
     });
@@ -65,17 +74,12 @@ export default function PoseSkeleton({ onPoseUpdate }) { // 接收父組件傳�
     }
 
     return () => holistic.close();
-  }, [onPoseUpdate]); // 當 function 改變時重新綁定
+  }, [onPoseUpdate]);
 
   return (
-    <div style={{ width: "100%", height: "100%", display: "flex", justifyContent: "center" }}>
+    <div style={{ position: "relative", width: "100%", height: "100%", background: "black" }}>
       <video ref={videoRef} style={{ display: "none" }} playsInline />
-      <canvas
-        ref={canvasRef}
-        width={640}
-        height={480}
-        style={{ width: "100%", height: "auto", border: "1px solid #444" }}
-      />
+      <canvas ref={canvasRef} width={640} height={480} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
     </div>
   );
 }
