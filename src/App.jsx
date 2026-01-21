@@ -10,7 +10,7 @@ export default function App() {
   return (
     <div className="vh-100 vw-100 bg-dark d-flex flex-column overflow-hidden">
       <div className="py-3 text-light text-center shadow-sm" style={{ background: "rgba(0,0,0,0.5)" }}>
-        <h2 className="mb-0">Pose + Fireworks Interactive Demo</h2>
+        <h2 className="mb-0">Pose + Fireworks Interactive</h2>
       </div>
 
       <div className="flex-grow-1 d-flex p-3 gap-3">
