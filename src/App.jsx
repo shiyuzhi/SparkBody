@@ -3,12 +3,15 @@ import "bootstrap/dist/css/bootstrap.min.css";
 import Fireworks from "./Fireworks";       
 import PoseSkeleton from "./PoseSkeleton"; 
 import YouTube from 'react-youtube'; 
+import DraggableSkeleton from "./DraggableSkeleton"; 
 
 export default function App() {
   const [poseData, setPoseData] = useState(null);
   const [videoId, setVideoId] = useState("4rgSzQwe5DQ"); 
   const [inputUrl, setInputUrl] = useState("https://youtu.be/4rgSzQwe5DQ");
   const [showPlayer, setShowPlayer] = useState(false);
+  const [showSkeleton, setShowSkeleton] = useState(true); 
+  const [skeletonScale, setSkeletonScale] = useState(0.5); 
 
   const extractVideoId = (url) => {
     const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
@@ -30,7 +33,7 @@ export default function App() {
   };
 
   return (
-    <div className="vh-100 vw-100 bg-dark d-flex flex-column overflow-hidden">
+    <div className="vh-100 vw-100 bg-dark d-flex flex-column overflow-hidden position-relative">
       <div className="py-2 text-light text-center shadow-sm" style={{ background: "rgba(0,0,0,0.5)" }}>
         <h2 className="mb-0">SparkBody Stage</h2>
       </div>
@@ -40,15 +43,46 @@ export default function App() {
           <div className="position-absolute w-100 h-100">
             <Fireworks poseData={poseData} />
           </div>
-          
-          {/*樂控制按鈕*/}
-          <button 
-            className="position-absolute bottom-0 start-0 m-3 btn btn-outline-light btn-sm"
-            style={{ zIndex: 20, borderRadius: '20px', background: 'rgba(0,0,0,0.3)' }}
-            onClick={() => setShowPlayer(!showPlayer)}
+
+          <DraggableSkeleton 
+            visible={showSkeleton} 
+            scale={skeletonScale} 
+            onHide={() => setShowSkeleton(false)}
           >
-           🎵 {showPlayer ? "Hide Player" : "Music Settings"}
-          </button>
+            <PoseSkeleton onPoseUpdate={setPoseData} />
+          </DraggableSkeleton>
+            
+          {/* 控制按鈕區 */}
+          <div className="position-absolute bottom-0 start-0 m-3 d-flex flex-column gap-2" style={{ zIndex: 30 }}>
+            {/* 音樂切換 */}
+            <button 
+              className="btn btn-outline-light btn-sm"
+              style={{ borderRadius: '20px', background: 'rgba(0,0,0,0.3)' }}
+              onClick={() => setShowPlayer(!showPlayer)}
+            >
+              🎵 {showPlayer ? "Hide Player" : "Music Settings"}
+            </button>
+
+            {/* 【新增】骨架切換與縮放控制 */}
+            <button 
+              className="btn btn-outline-info btn-sm"
+              style={{ borderRadius: '20px', background: 'rgba(0,0,0,0.3)' }}
+              onClick={() => setShowSkeleton(!showSkeleton)}
+            >
+              👤 {showSkeleton ? "Hide Skeleton" : "Show Skeleton"}
+            </button>
+
+            {showSkeleton && (
+              <div className="p-2 rounded bg-dark bg-opacity-50 border border-info" style={{ width: "150px" }}>
+                <input 
+                  type="range" className="form-range" 
+                  min="0.3" max="1.2" step="0.1" 
+                  value={skeletonScale}
+                  onChange={(e) => setSkeletonScale(parseFloat(e.target.value))}
+                />
+              </div>
+            )}
+          </div>
 
           <div className="position-absolute bottom-0 start-0 m-3 shadow-lg rounded overflow-hidden border border-light" 
                style={{ 
@@ -56,7 +90,7 @@ export default function App() {
                  zIndex: 10, 
                  background: "#222", 
                  width: "320px", 
-                 marginBottom: "50px",
+                 marginBottom: "120px",
                  display: showPlayer ? "block" : "none" 
                }}>
             
@@ -69,22 +103,10 @@ export default function App() {
                 onChange={handleUrlChange}
               />
             </div>
-            
             <YouTube videoId={videoId} opts={opts} />
           </div>
 
           <div className="position-absolute top-0 start-0 p-2 badge bg-primary m-2">Live Canvas</div>
-        </div>
-
-        {/* 右側 AI 偵測 */}
-        <div className="rounded overflow-hidden border border-secondary shadow" 
-             style={{ width: "35%", minWidth: "300px", background: "#000" }}>
-          <div className="w-100 h-100 d-flex flex-column">
-            <div className="p-2 badge bg-success m-2 align-self-start">AI Tracker</div>
-            <div className="flex-grow-1 d-flex justify-content-center align-items-center">
-              <PoseSkeleton onPoseUpdate={setPoseData} />
-            </div>
-          </div>
         </div>
       </div>
     </div>
