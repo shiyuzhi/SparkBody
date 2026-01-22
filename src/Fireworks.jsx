@@ -1,22 +1,45 @@
 // Fireworks.jsx
+// Fireworks.jsx
 import React, { useRef, useEffect } from "react";
+
+// 粒子類別
 class Particle {
-  constructor(x, y, color) {
+  constructor(x, y, color, mode = "normal") {
     this.x = x;
     this.y = y;
     this.color = color;
-    const angle = Math.random() * Math.PI * 2;
-    const force = Math.random() * 4 + 1;
-    this.vx = Math.cos(angle) * force;
-    this.vy = Math.sin(angle) * force;
     this.alpha = 1;
-    this.decay = Math.random() * 0.02 + 0.015;
+    this.decay = Math.random() * 0.008 + 0.004;
+
+    if (mode === "fist") {
+      // 握拳 → 火球慢慢往上
+      const baseAngle = -Math.PI / 2; 
+      const spread = Math.PI / 12;    
+      const angle = baseAngle + (Math.random() - 0.5) * spread;
+      const speed = Math.random() * 1.5 + 1;
+      this.vx = Math.cos(angle) * speed;
+      this.vy = Math.sin(angle) * speed;
+    } else if (mode === "open") {
+      // 手掌 → 像拋煙火往上噴散
+      const baseAngle = -Math.PI / 2; // 往上
+      const spread = Math.PI / 4; // ±45度
+      const angle = baseAngle + (Math.random() - 0.5) * spread;
+      const speed = Math.random() * 3 + 2; // 比握拳快
+      this.vx = Math.cos(angle) * speed;
+      this.vy = Math.sin(angle) * speed;
+    } else {
+      // 普通粒子
+      const angle = Math.random() * Math.PI * 2;
+      const speed = Math.random() * 1.2 + 0.5;
+      this.vx = Math.cos(angle) * speed;
+      this.vy = Math.sin(angle) * speed;
+    }
   }
 
   update() {
     this.x += this.vx;
     this.y += this.vy;
-    this.vy += 0.05; // 重力
+    this.vy += 0.03; // 重力
     this.alpha -= this.decay;
   }
 
@@ -24,57 +47,64 @@ class Particle {
     ctx.globalAlpha = this.alpha;
     ctx.fillStyle = this.color;
     ctx.beginPath();
-    ctx.arc(this.x, this.y, 2, 0, Math.PI * 2);
+    ctx.arc(this.x, this.y, 1.5, 0, Math.PI * 2);
     ctx.fill();
   }
+}
+
+// 計算距離
+function distance(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
 export default function Fireworks({ poseData }) {
   const canvasRef = useRef(null);
   const particles = useRef([]);
-  // 用 useRef 儲存最新的 poseData，避免觸發 useEffect 重啟
   const latestPose = useRef(poseData);
 
-  // 同步最新的 pose 到 ref，這非常快
   useEffect(() => {
     latestPose.current = poseData;
   }, [poseData]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d", { alpha: false }); // 優化：如果背景是不透明的，關閉 alpha 通道
+    const ctx = canvas.getContext("2d", { alpha: false });
     let animationFrameId;
 
     const render = () => {
-      // 1. 清除畫布（使用半透明覆蓋達成殘影效果）
       ctx.globalAlpha = 1.0;
-      ctx.fillStyle = "rgba(0, 0, 0, 0.15)";
+      ctx.fillStyle = "rgba(0,0,0,0.15)";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      // 2. 根據最新的 poseData 產生新粒子
       const data = latestPose.current;
       if (data) {
+        const hand = data.rightHand;
+        const index = data.rightHandIndex;
+        const pinky = data.rightHandPinky;
+
+        const isFist = hand && index && pinky && distance(hand, index) < 0.05 && distance(hand, pinky) < 0.05;
+        const isOpen = hand && index && pinky && distance(hand, index) > 0.1 && distance(hand, pinky) > 0.1;
+
         const config = [
-          { d: data.head, color: "#FF0000" },
-          { d: data.rightHand, color: "#FFA500" },
-          { d: data.rightKnee, color: "#0000FF" },
-          { d: data.leftKnee, color: "#00FF00" },
-          { d: data.leftHand, color: "#800080" },
+          ...(data.isHeadMoving ? [{ d: data.head, color: "#FF0000", mode: "normal" }] : []),
+          { d: hand, color: "#FFA500", mode: isFist ? "fist" : isOpen ? "open" : "normal" },
+          { d: data.rightKnee, color: "#0000FF", mode: "normal" },
+          { d: data.leftKnee, color: "#00FF00", mode: "normal" },
+          { d: data.leftHand, color: "#f910ab", mode: "normal" },
         ];
 
-        config.forEach(({ d, color }) => {
+        config.forEach(({ d, color, mode }) => {
           if (d && d.visibility > 0.5) {
             const x = d.x * canvas.width;
             const y = d.y * canvas.height;
-            for (let i = 0; i < 3; i++) { // 減少每影格產生數量，提升流暢度
-              particles.current.push(new Particle(x, y, color));
+            const count = mode === "fist" ? 5 : mode === "open" ? 8 : 2;
+            for (let i = 0; i < count; i++) {
+              particles.current.push(new Particle(x, y, color, mode));
             }
           }
         });
       }
 
-      // 3. 批量更新與繪製
-      // 使用倒序迴圈移除粒子，效率比 splice 高且不會跳過元素
       for (let i = particles.current.length - 1; i >= 0; i--) {
         const p = particles.current[i];
         p.update();
@@ -90,9 +120,8 @@ export default function Fireworks({ poseData }) {
 
     render();
     return () => cancelAnimationFrame(animationFrameId);
-  }, []); // 注意：依賴項為空，render 迴圈只在 mount 時啟動一次
+  }, []);
 
-  // 響應式畫布大小優化
   useEffect(() => {
     const handleResize = () => {
       if (canvasRef.current?.parentElement) {
@@ -106,5 +135,5 @@ export default function Fireworks({ poseData }) {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  return <canvas ref={canvasRef} style={{ display: "block", width: '100%', height: '100%' }} />;
+  return <canvas ref={canvasRef} style={{ display: "block", width: "100%", height: "100%" }} />;
 }
