@@ -1,113 +1,109 @@
-import React, { useState } from "react"; 
+// App.jsx
+import React, { useState, useEffect } from "react";
 import "bootstrap/dist/css/bootstrap.min.css";
-import Fireworks from "./Fireworks";       
-import PoseSkeleton from "./PoseSkeleton"; 
-import YouTube from 'react-youtube'; 
-import DraggableSkeleton from "./DraggableSkeleton"; 
+import DraggableSkeleton from "./DraggableSkeleton";
+import PoseSkeleton from "./PoseSkeleton";
 
 export default function App() {
+  const [showSkeleton, setShowSkeleton] = useState(true);
+  const [skeletonScale, setSkeletonScale] = useState(1);
+  const [maxScale, setMaxScale] = useState(2);
+  const [isMobile, setIsMobile] = useState(false);
   const [poseData, setPoseData] = useState(null);
-  const [videoId, setVideoId] = useState("4rgSzQwe5DQ"); 
-  const [inputUrl, setInputUrl] = useState("https://youtu.be/4rgSzQwe5DQ");
-  const [showPlayer, setShowPlayer] = useState(false);
-  const [showSkeleton, setShowSkeleton] = useState(true); 
-  const [skeletonScale, setSkeletonScale] = useState(0.5); 
 
-  const extractVideoId = (url) => {
-    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
-    const match = url.match(regExp);
-    return (match && match[2].length === 11) ? match[2] : null;
-  };
+  // 偵測是否為手機
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth <= 768);
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
+  }, []);
 
-  const handleUrlChange = (e) => {
-    const url = e.target.value;
-    setInputUrl(url);
-    const id = extractVideoId(url);
-    if (id) setVideoId(id);
-  };
-
-  const opts = {
-    height: '180',
-    width: '320',
-    playerVars: { autoplay: 1, controls: 1 },
-  };
+  // 動態計算最大縮放，避免骨架超出螢幕
+  useEffect(() => {
+    const handleResize = () => {
+      const widthLimit = window.innerWidth / 150;
+      const heightLimit = window.innerHeight / 150;
+      setMaxScale(Math.min(2, widthLimit, heightLimit));
+    };
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   return (
-    <div className="vh-100 vw-100 bg-dark d-flex flex-column overflow-hidden position-relative">
-      <div className="py-2 text-light text-center shadow-sm" style={{ background: "rgba(0,0,0,0.5)" }}>
-        <h2 className="mb-0">SparkBody Stage</h2>
-      </div>
+    <div className="vw-100 vh-100 bg-black position-relative overflow-hidden">
+      
+      {/* 桌面才顯示骨架 */}
+      {!isMobile && showSkeleton && (
+        <DraggableSkeleton
+          scale={skeletonScale}
+          visible={showSkeleton}
+          onHide={() => setShowSkeleton(false)}
+          minScale={0.3}
+          maxScale={maxScale}
+          initialPosition={{ top: 0, left: 0 }}
+          transparent
+        >
+          <PoseSkeleton onPoseUpdate={setPoseData} />
+        </DraggableSkeleton>
+      )}
 
-      <div className="flex-grow-1 d-flex p-3 gap-3 position-relative">
-        <div className="flex-grow-1 position-relative rounded overflow-hidden border border-secondary shadow">
-          <div className="position-absolute w-100 h-100">
-            <Fireworks poseData={poseData} />
-          </div>
+      {/* 底部工具列 */}
+      <div
+        className="w-100 p-2 d-flex align-items-center justify-content-between"
+        style={{
+          background: "linear-gradient(to bottom, #111, #000)",
+          borderTop: "1px solid #444",
+          height: "80px",
+          zIndex: 200,
+          position: "absolute",
+          bottom: 0,
+          left: 0,
+          paddingLeft: "2vw",
+          paddingRight: "2vw",
+        }}
+      >
+        {/* 左側骨架控制 */}
+        <div className="d-flex align-items-center gap-3" style={{ flex: 1 }}>
+          {!isMobile && (
+            <>
+              <button
+                className={`btn btn-sm ${showSkeleton ? "btn-info" : "btn-outline-info"}`}
+                onClick={() => setShowSkeleton(!showSkeleton)}
+                style={{ borderRadius: "4px", fontWeight: "500" }}
+              >
+                {showSkeleton ? "Hide Skeleton" : "Show Skeleton"}
+              </button>
 
-          <DraggableSkeleton 
-            visible={showSkeleton} 
-            scale={skeletonScale} 
-            onHide={() => setShowSkeleton(false)}
-          >
-            <PoseSkeleton onPoseUpdate={setPoseData} />
-          </DraggableSkeleton>
-            
-          {/* 控制按鈕區 */}
-          <div className="position-absolute bottom-0 start-0 m-3 d-flex flex-column gap-2" style={{ zIndex: 30 }}>
-            {/* 音樂切換 */}
-            <button 
-              className="btn btn-outline-light btn-sm"
-              style={{ borderRadius: '20px', background: 'rgba(0,0,0,0.3)' }}
-              onClick={() => setShowPlayer(!showPlayer)}
-            >
-              🎵 {showPlayer ? "Hide Player" : "Music Settings"}
-            </button>
-
-            {/* 【新增】骨架切換與縮放控制 */}
-            <button 
-              className="btn btn-outline-info btn-sm"
-              style={{ borderRadius: '20px', background: 'rgba(0,0,0,0.3)' }}
-              onClick={() => setShowSkeleton(!showSkeleton)}
-            >
-              👤 {showSkeleton ? "Hide Skeleton" : "Show Skeleton"}
-            </button>
-
-            {showSkeleton && (
-              <div className="p-2 rounded bg-dark bg-opacity-50 border border-info" style={{ width: "150px" }}>
-                <input 
-                  type="range" className="form-range" 
-                  min="0.3" max="1.2" step="0.1" 
-                  value={skeletonScale}
-                  onChange={(e) => setSkeletonScale(parseFloat(e.target.value))}
-                />
-              </div>
-            )}
-          </div>
-
-          <div className="position-absolute bottom-0 start-0 m-3 shadow-lg rounded overflow-hidden border border-light" 
-               style={{ 
-                 opacity: "0.95", 
-                 zIndex: 10, 
-                 background: "#222", 
-                 width: "320px", 
-                 marginBottom: "120px",
-                 display: showPlayer ? "block" : "none" 
-               }}>
-            
-            <div className="p-2 bg-secondary">
-              <input 
-                type="text" 
-                className="form-control form-control-sm bg-dark text-white border-0" 
-                placeholder="貼上網址..."
-                value={inputUrl}
-                onChange={handleUrlChange}
-              />
-            </div>
-            <YouTube videoId={videoId} opts={opts} />
-          </div>
-
-          <div className="position-absolute top-0 start-0 p-2 badge bg-primary m-2">Live Canvas</div>
+              {showSkeleton && (
+                <div className="d-flex align-items-center gap-2">
+                  <span className="text-secondary small">Scale:</span>
+                  <input
+                    type="range"
+                    min="0.3"
+                    max={maxScale}
+                    step="0.05"
+                    value={skeletonScale}
+                    onChange={(e) => setSkeletonScale(parseFloat(e.target.value))}
+                    style={{ width: "20vw" }}
+                  />
+                  <span className="text-info mono" style={{ fontSize: "0.8rem", width: "40px" }}>
+                    {Math.round(skeletonScale * 100)}%
+                  </span>
+                </div>
+              )}
+            </>
+          )}
         </div>
+
+        {/* 中間標題 */}
+        <div className="text-light fw-bold text-center" style={{ letterSpacing: "4px", fontSize: "1.2rem", flex: 1 }}>
+          SPARKBODY STAGE
+        </div>
+
+        {/* 右側空白 */}
+        <div style={{ flex: 1 }}></div>
       </div>
     </div>
   );

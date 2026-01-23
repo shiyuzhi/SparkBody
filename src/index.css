@@ -22,12 +22,21 @@ a:hover {
   color: #535bf2;
 }
 
-body {
+/* 主要調整：固定畫面 & 響應式 */
+html, body, #root {
+  width: 100vw;
+  height: 100vh;
   margin: 0;
+  padding: 0;
+  overflow: hidden;       /* 防止滾動條出現 */
   display: flex;
-  place-items: center;
-  min-width: 320px;
+  flex-direction: column; /* 垂直布局 */
+}
+
+body {
+  min-width: 320px;       /* 手機最小寬度 */
   min-height: 100vh;
+  place-items: center;
 }
 
 h1 {
@@ -54,6 +63,18 @@ button:focus-visible {
   outline: 4px auto -webkit-focus-ring-color;
 }
 
+/* 響應式：手機和平板 */
+@media (max-width: 768px) {
+  h1 {
+    font-size: 2em;
+  }
+  button {
+    padding: 0.5em 1em;
+    font-size: 0.9em;
+  }
+}
+
+/* 深色 / 淺色主題 */
 @media (prefers-color-scheme: light) {
   :root {
     color: #213547;

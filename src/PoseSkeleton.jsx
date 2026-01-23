@@ -1,3 +1,4 @@
+// PoseSkeleton.jsx
 import React, { useRef, useEffect } from "react";
 import { Holistic, POSE_CONNECTIONS, HAND_CONNECTIONS } from "@mediapipe/holistic";
 import { Camera } from "@mediapipe/camera_utils";
@@ -6,15 +7,13 @@ import { drawConnectors } from "@mediapipe/drawing_utils";
 export default function PoseSkeleton({ onPoseUpdate }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
- 
-  //記錄上一幀頭部位置的 Ref ---
   const lastHeadPos = useRef(null);
 
   useEffect(() => {
     let isMounted = true;
     const holistic = new Holistic({
-       locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${file}`,
-  });
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${file}`,
+    });
 
     holistic.setOptions({
       modelComplexity: 1,
@@ -29,31 +28,19 @@ export default function PoseSkeleton({ onPoseUpdate }) {
       const canvas = canvasRef.current;
       const ctx = canvas.getContext("2d");
 
-      // 判斷頭是否移動
       let isHeadMoving = false;
-      const currentHead = results.poseLandmarks?.[0]; // 0 號點是鼻尖 (Nose)
-
+      const currentHead = results.poseLandmarks?.[0];
       if (currentHead && lastHeadPos.current) {
-        // 計算當前點與上一個點的距離
         const dx = currentHead.x - lastHeadPos.current.x;
         const dy = currentHead.y - lastHeadPos.current.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
-        // 若距離大於此值，視為頭部有在動
-        const THRESHOLD = 0.05; 
-        if (distance > THRESHOLD) {
-          isHeadMoving = true;
-        }
+        if (distance > 0.05) isHeadMoving = true;
       }
+      if (currentHead) lastHeadPos.current = { x: currentHead.x, y: currentHead.y };
 
-      // 更新 Ref 
-      if (currentHead) {
-        lastHeadPos.current = { x: currentHead.x, y: currentHead.y };
-      }
-
+      // 清空畫布但保持透明
       ctx.save();
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = "black";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.translate(canvas.width, 0);
       ctx.scale(-1, 1);
 
@@ -75,8 +62,7 @@ export default function PoseSkeleton({ onPoseUpdate }) {
           rightHand: flip(results.rightHandLandmarks?.[8] || results.poseLandmarks?.[16]),
           leftKnee: flip(results.poseLandmarks?.[25]),
           rightKnee: flip(results.poseLandmarks?.[26]),
-          // --- 新增：將判斷結果傳給父組件 ---
-          isHeadMoving: isHeadMoving, 
+          isHeadMoving,
         });
       }
       ctx.restore();
@@ -88,8 +74,8 @@ export default function PoseSkeleton({ onPoseUpdate }) {
         onFrame: async () => {
           if (isMounted && videoRef.current) await holistic.send({ image: videoRef.current });
         },
-        width: 640,
-        height: 480,
+        width: window.innerWidth,
+        height: window.innerHeight,
       });
       camera.start();
     }
@@ -102,13 +88,20 @@ export default function PoseSkeleton({ onPoseUpdate }) {
   }, [onPoseUpdate]);
 
   return (
-    <div style={{ position: "relative", width: "100%", height: "100%", background: "black" }}>
+    <div style={{ position: "relative", width: "100%", height: "100%" }}>
       <video ref={videoRef} style={{ display: "none" }} playsInline />
-       <canvas
-        ref={canvasRef}
-        width={640}
-        height={480}
-        style={{ width: "100%", height: "100%", objectFit: "cover" }}
+      <canvas
+          ref={canvasRef}
+          width={window.innerWidth}
+          height={window.innerHeight}
+          style={{
+          width: "100%",
+          height: "100%",
+          objectFit: "contain", // 改成 contain，不裁掉腳部
+          background: "transparent",
+          pointerEvents: "none", // 不阻擋下面的煙火互動
+          zIndex: 1,             // 確保骨架在煙火之上，但可調
+        }}
       />
     </div>
   );
