@@ -3,6 +3,7 @@ import React, { useState, useEffect } from "react";
 import "bootstrap/dist/css/bootstrap.min.css";
 import DraggableSkeleton from "./DraggableSkeleton";
 import PoseSkeleton from "./PoseSkeleton";
+import Fireworks from "./Fireworks";
 
 export default function App() {
   const [showSkeleton, setShowSkeleton] = useState(true);
@@ -11,7 +12,6 @@ export default function App() {
   const [isMobile, setIsMobile] = useState(false);
   const [poseData, setPoseData] = useState(null);
 
-  // 偵測是否為手機
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth <= 768);
     checkMobile();
@@ -19,7 +19,6 @@ export default function App() {
     return () => window.removeEventListener("resize", checkMobile);
   }, []);
 
-  // 動態計算最大縮放，避免骨架超出螢幕
   useEffect(() => {
     const handleResize = () => {
       const widthLimit = window.innerWidth / 150;
@@ -34,6 +33,9 @@ export default function App() {
   return (
     <div className="vw-100 vh-100 bg-black position-relative overflow-hidden">
       
+      {/* Fireworks 層 */}
+      <Fireworks poseData={poseData} />
+
       {/* 桌面才顯示骨架 */}
       {!isMobile && showSkeleton && (
         <DraggableSkeleton
@@ -42,7 +44,9 @@ export default function App() {
           onHide={() => setShowSkeleton(false)}
           minScale={0.3}
           maxScale={maxScale}
-          initialPosition={{ top: 0, left: 0 }}
+          initialPosition={{ top: "10%", left: "25%" }}
+          width={600}   // 固定容器寬
+          height={600}  // 固定容器高，包住全身骨架
           transparent
         >
           <PoseSkeleton onPoseUpdate={setPoseData} />
@@ -64,7 +68,7 @@ export default function App() {
           paddingRight: "2vw",
         }}
       >
-        {/* 左側骨架控制 */}
+        {/* 左側控制 */}
         <div className="d-flex align-items-center gap-3" style={{ flex: 1 }}>
           {!isMobile && (
             <>

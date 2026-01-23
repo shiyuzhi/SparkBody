@@ -1,108 +1,139 @@
+// Fireworks.jsx
+// Fireworks.jsx
 import React, { useRef, useEffect } from "react";
-import { gsap } from "gsap";
 
-export default function MouseFireworks() {
-  const svgRef = useRef(null);
-  const pointer = useRef({ x: 0, y: 0 });
+// 粒子類別
+class Particle {
+  constructor(x, y, color, mode = "normal") {
+    this.x = x;
+    this.y = y;
+    this.color = color;
+    this.alpha = 1;
+    this.decay = Math.random() * 0.008 + 0.004;
 
-  // 1. 追蹤滑鼠位置 (保持你原本的邏輯)
+    if (mode === "fist") {
+      // 握拳 → 火球慢慢往上
+      const baseAngle = -Math.PI / 2; 
+      const spread = Math.PI / 12;    
+      const angle = baseAngle + (Math.random() - 0.5) * spread;
+      const speed = Math.random() * 1.5 + 1;
+      this.vx = Math.cos(angle) * speed;
+      this.vy = Math.sin(angle) * speed;
+    } else if (mode === "open") {
+      // 手掌 → 像拋煙火往上噴散
+      const baseAngle = -Math.PI / 2; // 往上
+      const spread = Math.PI / 4; // ±45度
+      const angle = baseAngle + (Math.random() - 0.5) * spread;
+      const speed = Math.random() * 3 + 2; // 比握拳快
+      this.vx = Math.cos(angle) * speed;
+      this.vy = Math.sin(angle) * speed;
+    } else {
+      // 普通粒子
+      const angle = Math.random() * Math.PI * 2;
+      const speed = Math.random() * 1.2 + 0.5;
+      this.vx = Math.cos(angle) * speed;
+      this.vy = Math.sin(angle) * speed;
+    }
+  }
+
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.vy += 0.03; // 重力
+    this.alpha -= this.decay;
+  }
+
+  draw(ctx) {
+    ctx.globalAlpha = this.alpha;
+    ctx.fillStyle = this.color;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// 計算距離
+function distance(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+export default function Fireworks({ poseData }) {
+  const canvasRef = useRef(null);
+  const particles = useRef([]);
+  const latestPose = useRef(poseData);
+
   useEffect(() => {
-    const handlePointerMove = (e) => {
-      pointer.current.x = e.clientX;
-      pointer.current.y = e.clientY;
+    latestPose.current = poseData;
+  }, [poseData]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d", { alpha: false });
+    let animationFrameId;
+
+    const render = () => {
+      ctx.globalAlpha = 1.0;
+      ctx.fillStyle = "rgba(0,0,0,0.15)";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      const data = latestPose.current;
+      if (data) {
+        const hand = data.rightHand;
+        const index = data.rightHandIndex;
+        const pinky = data.rightHandPinky;
+
+        const isFist = hand && index && pinky && distance(hand, index) < 0.05 && distance(hand, pinky) < 0.05;
+        const isOpen = hand && index && pinky && distance(hand, index) > 0.1 && distance(hand, pinky) > 0.1;
+
+        const config = [
+          ...(data.isHeadMoving ? [{ d: data.head, color: "#FF0000", mode: "normal" }] : []),
+          { d: hand, color: "#FFA500", mode: isFist ? "fist" : isOpen ? "open" : "normal" },
+          { d: data.rightKnee, color: "#0000FF", mode: "normal" },
+          { d: data.leftKnee, color: "#00FF00", mode: "normal" },
+          { d: data.leftHand, color: "#f910ab", mode: "normal" },
+        ];
+
+        config.forEach(({ d, color, mode }) => {
+          if (d && d.visibility > 0.5) {
+            const x = d.x * canvas.width;
+            const y = d.y * canvas.height;
+            const count = mode === "fist" ? 5 : mode === "open" ? 8 : 2;
+            for (let i = 0; i < count; i++) {
+              particles.current.push(new Particle(x, y, color, mode));
+            }
+          }
+        });
+      }
+
+      for (let i = particles.current.length - 1; i >= 0; i--) {
+        const p = particles.current[i];
+        p.update();
+        if (p.alpha <= 0) {
+          particles.current.splice(i, 1);
+        } else {
+          p.draw(ctx);
+        }
+      }
+
+      animationFrameId = requestAnimationFrame(render);
     };
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerdown", handlePointerMove);
-    
-    return () => {
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerdown", handlePointerMove);
-      // 清理：組件卸載時殺掉所有還在跑的動畫，防止記憶體洩漏
-      gsap.killTweensOf(`${svgRef.current} *`);
-    };
+
+    render();
+    return () => cancelAnimationFrame(animationFrameId);
   }, []);
 
-  // 2. 點擊觸發
-  const handlePointerUp = () => {
-    fire(pointer.current);
-  };
+  useEffect(() => {
+    const handleResize = () => {
+      if (canvasRef.current?.parentElement) {
+        const { clientWidth, clientHeight } = canvasRef.current.parentElement;
+        canvasRef.current.width = clientWidth;
+        canvasRef.current.height = clientHeight;
+      }
+    };
+    window.addEventListener("resize", handleResize);
+    handleResize();
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
-  // 3. 火花動畫函式
-  const fire = (m) => {
-    const stage = svgRef.current;
-    if (!stage) return;
-
-    // 建立元素
-    const firework = document.createElementNS("http://www.w3.org/2000/svg", "g"),
-          trail = document.createElementNS("http://www.w3.org/2000/svg", "g"),
-          ring = document.createElementNS("http://www.w3.org/2000/svg", "g"),
-          hsl = `hsl(${gsap.utils.random(0, 360, 1)}, 100%, 50%)`;
-
-    stage.appendChild(firework);
-    firework.appendChild(trail);
-    firework.appendChild(ring);
-
-    // Trail 動畫 (你原始的路徑邏輯)
-    for (let i = 1; i < 5; i++) {
-      const t = document.createElementNS("http://www.w3.org/2000/svg", "path");
-      gsap.set(t, { 
-        x: m.x, 
-        y: window.innerHeight, 
-        opacity: 0.25, 
-        attr: { "stroke-width": i, "stroke": "#fff", d: `M0,0 0,${window.innerHeight}` } 
-      });
-      gsap.to(t, { y: m.y, ease: "expo" });
-      trail.appendChild(t);
-    }
-
-    // Ring 動畫 (爆炸圓圈)
-    const ringCount = gsap.utils.random(6, 13);
-    for (let i = 1; i < ringCount; i++) { 
-      const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-      gsap.set(c, { 
-        x: m.x, 
-        y: m.y, 
-        attr: { 
-          r: (i / 1.5) * 18, 
-          fill: "none", 
-          stroke: hsl, 
-          "stroke-width": 0.25 + (9 - i), 
-          "stroke-dasharray": `1 ${i / 2 * gsap.utils.random(i + 3, i + 6)}` 
-        } 
-      });
-      ring.appendChild(c);
-    }
-
-    // 動態 Timeline
-    gsap.timeline({ 
-        onComplete: () => {
-          // 修正點：加上檢查，避免 removeChild 時元素已不在 DOM 中
-          if (stage.contains(firework)) {
-            stage.removeChild(firework);
-          }
-        } 
-    })
-      .to(trail.children, { duration: 0.2, attr: { d: "M0,0 0,0" }, stagger: -0.08, ease: "expo.inOut" }, 0)
-      .to(trail.children, { duration: 0.4, scale: () => gsap.utils.random(40, 80, 1), attr: { stroke: hsl }, stagger: -0.15, ease: "expo" }, 0.4)
-      .to(trail.children, { duration: 0.3, opacity: 0, stagger: -0.1, ease: "power2.inOut" }, 0.5)
-      .from(ring.children, { duration: 1, rotate: () => gsap.utils.random(-90, 90, 1), scale: 0, stagger: 0.05, ease: "expo" }, 0.4)
-      .to(ring.children, { opacity: 0, stagger: 0.1, ease: "sine.inOut" }, 0.7)
-      .to(ring.children, { duration: 1, y: "+=30", ease: "power2.in" }, 0.7);
-  };
-
-  // 4. 返回組件結構
-  return (
-    <svg 
-      ref={svgRef} 
-      style={{ 
-        width: "100%", 
-        height: "100%", 
-        position: "absolute", 
-        inset: 0,
-        backgroundColor: "#1806066e", // 加入底色能讓煙火更明顯
-        overflow: "hidden"
-      }} 
-      onPointerUp={handlePointerUp} 
-    />
-  );
+  return <canvas ref={canvasRef} style={{ display: "block", width: "100%", height: "100%" }} />;
 }

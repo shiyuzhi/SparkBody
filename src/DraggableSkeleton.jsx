@@ -9,7 +9,9 @@ export default function DraggableSkeleton({
   onHide,
   minScale = 0.3,
   maxScale = 2,
-  initialPosition = { top: 0, left: 0 },
+  initialPosition = { top: "10%", left: "25%" },
+  width = 600,
+  height = 600,
   transparent = true,
 }) {
   const nodeRef = useRef(null);
@@ -20,12 +22,12 @@ export default function DraggableSkeleton({
         ref={nodeRef}
         className="position-absolute"
         style={{
-          zIndex: 100,
+          zIndex: 100,  // 比火花低一點
           top: initialPosition.top,
           left: initialPosition.left,
           display: visible ? "block" : "none",
-          width: "100vw",   // 全螢幕拖動容器
-          height: "100vh",
+          width: width,
+          height: height,
         }}
       >
         <div
