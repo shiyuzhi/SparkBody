@@ -1,17 +1,17 @@
 // PoseSkeleton.jsx
-// PoseSkeleton.jsx
 import React, { useRef, useEffect } from "react";
 import { Holistic, POSE_CONNECTIONS, HAND_CONNECTIONS } from "@mediapipe/holistic";
 import { Camera } from "@mediapipe/camera_utils";
 import { drawConnectors } from "@mediapipe/drawing_utils";
 
-export default function PoseSkeleton({ onPoseUpdate }) {
+export default function PoseSkeleton({ onPoseUpdate, hideCanvas = false }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const lastHeadPos = useRef(null);
 
   useEffect(() => {
     let isMounted = true;
+
     const holistic = new Holistic({
       locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${file}`,
     });
@@ -25,12 +25,13 @@ export default function PoseSkeleton({ onPoseUpdate }) {
     });
 
     holistic.onResults((results) => {
-      if (!isMounted || !canvasRef.current) return;
+      if (!isMounted) return;
       const canvas = canvasRef.current;
-      const ctx = canvas.getContext("2d");
+      const ctx = canvas?.getContext("2d");
 
       let isHeadMoving = false;
       const currentHead = results.poseLandmarks?.[0];
+
       if (currentHead && lastHeadPos.current) {
         const dx = currentHead.x - lastHeadPos.current.x;
         const dy = currentHead.y - lastHeadPos.current.y;
@@ -39,22 +40,7 @@ export default function PoseSkeleton({ onPoseUpdate }) {
       }
       if (currentHead) lastHeadPos.current = { x: currentHead.x, y: currentHead.y };
 
-      // 清空畫布但保持透明
-      ctx.save();
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.translate(canvas.width, 0);
-      ctx.scale(-1, 1);
-
-      if (results.poseLandmarks) {
-        drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS, { color: "#e6ffdf", lineWidth: 8 });
-      }
-      if (results.leftHandLandmarks) {
-        drawConnectors(ctx, results.leftHandLandmarks, HAND_CONNECTIONS, { color: "#ffffff", lineWidth: 6 });
-      }
-      if (results.rightHandLandmarks) {
-        drawConnectors(ctx, results.rightHandLandmarks, HAND_CONNECTIONS, { color: "#ffffff", lineWidth: 6 });
-      }
-
+      // 更新 poseData
       if (onPoseUpdate) {
         const flip = (lm) => (lm ? { x: 1 - lm.x, y: lm.y, visibility: lm.visibility ?? 1 } : null);
         onPoseUpdate({
@@ -66,19 +52,39 @@ export default function PoseSkeleton({ onPoseUpdate }) {
           isHeadMoving,
         });
       }
-      ctx.restore();
+
+      // 若隱藏畫布，則不繪製骨架
+      if (!hideCanvas && ctx) {
+        ctx.save();
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.translate(canvas.width, 0);
+        ctx.scale(-1, 1);
+
+        if (results.poseLandmarks) {
+          drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS, { color: "#e6ffdf", lineWidth: 8 });
+        }
+        if (results.leftHandLandmarks) {
+          drawConnectors(ctx, results.leftHandLandmarks, HAND_CONNECTIONS, { color: "#ffffff", lineWidth: 6 });
+        }
+        if (results.rightHandLandmarks) {
+          drawConnectors(ctx, results.rightHandLandmarks, HAND_CONNECTIONS, { color: "#ffffff", lineWidth: 6 });
+        }
+        ctx.restore();
+      }
     });
 
     let camera = null;
     if (videoRef.current) {
       camera = new Camera(videoRef.current, {
         onFrame: async () => {
-          if (isMounted && videoRef.current) await holistic.send({ image: videoRef.current });
+          if (isMounted && videoRef.current) {
+            await holistic.send({ image: videoRef.current });
+          }
         },
         width: window.innerWidth,
         height: window.innerHeight,
       });
-      camera.start();
+      camera.start().catch((err) => console.warn("Camera start failed:", err));
     }
 
     return () => {
@@ -86,22 +92,23 @@ export default function PoseSkeleton({ onPoseUpdate }) {
       if (camera) camera.stop();
       holistic.close();
     };
-  }, [onPoseUpdate]);
+  }, [onPoseUpdate, hideCanvas]);
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
       <video ref={videoRef} style={{ display: "none" }} playsInline />
       <canvas
-          ref={canvasRef}
-          width={window.innerWidth}
-          height={window.innerHeight}
-          style={{
+        ref={canvasRef}
+        width={window.innerWidth}
+        height={window.innerHeight}
+        style={{
           width: "100%",
           height: "100%",
-          objectFit: "contain", // 改成 contain，不裁掉腳部
+          objectFit: "contain",
           background: "transparent",
-          pointerEvents: "none", // 不阻擋下面的煙火互動
-          zIndex: 1,             // 確保骨架在煙火之上，但可調
+          pointerEvents: "none",
+          zIndex: 1,
+          display: hideCanvas ? "none" : "block",
         }}
       />
     </div>

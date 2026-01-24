@@ -5,8 +5,6 @@ import DraggableSkeleton from "./DraggableSkeleton";
 import DraggableYouTube from "./DraggableyouTube";
 import PoseSkeleton from "./PoseSkeleton";
 import Fireworks from "./Fireworks";
-import YouTube from "react-youtube";
-
 
 export default function App() {
   const [showSkeleton, setShowSkeleton] = useState(true);
@@ -44,7 +42,6 @@ export default function App() {
     },
   };
 
-
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth <= 768);
     checkMobile();
@@ -69,8 +66,8 @@ export default function App() {
       {/* Fireworks 層 */}
       <Fireworks poseData={poseData} />
 
-      {/* 桌面骨架 */}
-      {!isMobile && showSkeleton && (
+      {/* PoseSkeleton 永遠存在，canvas 依 showSkeleton 顯示 */}
+      {!isMobile && (
         <DraggableSkeleton
           scale={skeletonScale}
           visible={showSkeleton}
@@ -82,7 +79,7 @@ export default function App() {
           height={Math.min(600, window.innerHeight * 0.6)}
           transparent
         >
-          <PoseSkeleton onPoseUpdate={setPoseData} />
+          <PoseSkeleton onPoseUpdate={setPoseData} hideCanvas={!showSkeleton} />
         </DraggableSkeleton>
       )}
 
