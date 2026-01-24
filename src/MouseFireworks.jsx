@@ -5,7 +5,7 @@ export default function MouseFireworks() {
   const svgRef = useRef(null);
   const pointer = useRef({ x: 0, y: 0 });
 
-  // 1. 追蹤滑鼠位置 (保持你原本的邏輯)
+  // 追蹤滑鼠位置 
   useEffect(() => {
     const handlePointerMove = (e) => {
       pointer.current.x = e.clientX;
@@ -90,7 +90,6 @@ export default function MouseFireworks() {
       .to(ring.children, { duration: 1, y: "+=30", ease: "power2.in" }, 0.7);
   };
 
-  // 4. 返回組件結構
   return (
     <svg 
       ref={svgRef} 

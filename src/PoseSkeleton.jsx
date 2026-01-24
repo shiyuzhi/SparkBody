@@ -1,4 +1,5 @@
 // PoseSkeleton.jsx
+// PoseSkeleton.jsx
 import React, { useRef, useEffect } from "react";
 import { Holistic, POSE_CONNECTIONS, HAND_CONNECTIONS } from "@mediapipe/holistic";
 import { Camera } from "@mediapipe/camera_utils";
@@ -45,13 +46,13 @@ export default function PoseSkeleton({ onPoseUpdate }) {
       ctx.scale(-1, 1);
 
       if (results.poseLandmarks) {
-        drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS, { color: "#ebe8e8", lineWidth: 1 });
+        drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS, { color: "#e6ffdf", lineWidth: 8 });
       }
       if (results.leftHandLandmarks) {
-        drawConnectors(ctx, results.leftHandLandmarks, HAND_CONNECTIONS, { color: "white", lineWidth: 1 });
+        drawConnectors(ctx, results.leftHandLandmarks, HAND_CONNECTIONS, { color: "#ffffff", lineWidth: 6 });
       }
       if (results.rightHandLandmarks) {
-        drawConnectors(ctx, results.rightHandLandmarks, HAND_CONNECTIONS, { color: "white", lineWidth: 1 });
+        drawConnectors(ctx, results.rightHandLandmarks, HAND_CONNECTIONS, { color: "#ffffff", lineWidth: 6 });
       }
 
       if (onPoseUpdate) {
