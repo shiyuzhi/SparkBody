@@ -27,7 +27,7 @@ export default function App() {
   return (
     <div className="vw-100 vh-100 bg-black position-relative overflow-hidden">
       
-      {/* 1. 精準看板：移到左下角 (在底欄上方) */}
+      {/*手勢移到左下角*/}
       <div style={{
         position: "absolute", bottom: "75px", left: "20px", zIndex: 1000,
         background: "rgba(0, 0, 0, 0.8)", padding: "10px 15px", borderRadius: "8px",
@@ -89,7 +89,7 @@ export default function App() {
           <Recognizer onGestureData={setGestureData} />
           
           <button className="btn btn-sm btn-warning" onClick={() => setShowMusic(!showMusic)}>
-            Music UI
+              {showMusic ? "Hide Music" : "Show Music"}
           </button>
           
           <input type="text" value={inputUrl} onChange={handleUrlChange} 

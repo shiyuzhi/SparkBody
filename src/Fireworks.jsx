@@ -2,26 +2,26 @@
 import React, { useRef, useEffect } from "react";
 
 class Particle {
-  constructor(x, y, color, isExplosion = false) {
+  constructor(x, y, color, type = "normal") {
     this.x = x;
     this.y = y;
     this.color = color;
-    this.isExplosion = isExplosion;
+    this.type = type;
     this.alpha = 1;
+    this.friction = 0.94;
+    this.decay = type === "heart" ? 0.02 : 0.07;
 
-    this.friction = 0.96;
-    this.gravity = 0.15;
-    this.decay = isExplosion ? Math.random() * 0.03 + 0.01 : 0.05;
-
-    if (isExplosion) {
-      // 爆炸粒子
+    if (type === "explosion") {
       const angle = Math.random() * Math.PI * 2;
-      const speed = Math.random() * 15 + 8;
+      const speed = Math.random() * 10 + 6;
       this.vx = Math.cos(angle) * speed;
       this.vy = Math.sin(angle) * speed;
-      this.size = Math.random() * 3 + 1;
+      this.size = Math.random() * 3 + 2;
+    } else if (type === "heart") {
+      this.vx = (Math.random() - 0.5) * 0.6;
+      this.vy = -Math.random() * 1.2;
+      this.size = 2.5;
     } else {
-      // 手指拖尾粒子（粗大明顯）
       this.vx = (Math.random() - 0.5) * 2;
       this.vy = (Math.random() - 0.5) * 2;
       this.size = Math.random() * 4 + 2;
@@ -31,7 +31,8 @@ class Particle {
   update() {
     this.vx *= this.friction;
     this.vy *= this.friction;
-    if (this.isExplosion) this.vy += this.gravity;
+    if (this.type === "explosion") this.vy += 0.15;
+    if (this.type === "heart") this.vy -= 0.15;
     this.x += this.vx;
     this.y += this.vy;
     this.alpha -= this.decay;
@@ -42,8 +43,9 @@ class Particle {
     ctx.save();
     ctx.globalAlpha = this.alpha;
     ctx.fillStyle = this.color;
-    if (this.isExplosion) {
-      ctx.shadowBlur = 12;
+    if (this.type === "heart" || this.type === "explosion") {
+      ctx.globalCompositeOperation = "lighter";
+      ctx.shadowBlur = 10;
       ctx.shadowColor = this.color;
     }
     ctx.beginPath();
@@ -56,57 +58,78 @@ class Particle {
 export default function Fireworks({ poseData }) {
   const canvasRef = useRef(null);
   const particles = useRef([]);
-  const lastExplosionTime = useRef({ Left: 0, Right: 0 });
+  const lastActionTime = useRef({ Left: 0, Right: 0, Heart: 0 });
 
   useEffect(() => {
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
     let raf;
 
-    const render = () => {
-      ctx.fillStyle = "rgba(0,0,0,0.25)";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const createSmallHeart = (centerX, centerY) => {
+      const numPoints = 60; // 點數多一點，輪廓更明顯
+      const scale = 6;
+      for (let i = 0; i < numPoints; i++) {
+        const t = (i / numPoints) * Math.PI * 2;
+        const xOffset = scale * (16 * Math.pow(Math.sin(t), 3));
+        const yOffset = -scale * (13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t));
+        const colors = ["#b700ff", "#ff0055", "#00ffa6", "#FFFFFF"];
+        const color = colors[Math.floor(Math.random() * colors.length)];
+        particles.current.push(new Particle(centerX + xOffset, centerY + yOffset, color, "heart"));
+      }
+    };
 
+    const render = () => {
+      const w = canvas.width;
+      const h = canvas.height;
+      if (w === 0 || h === 0) return;
+
+      ctx.fillStyle = "rgba(0,0,0,0.3)";
+      ctx.fillRect(0, 0, w, h);
       const now = Date.now();
 
-      ["leftHand", "rightHand"].forEach((handKey) => {
-        const pos = poseData?.[handKey];
-        if (!pos || pos.visibility <= 0.5) return;
+      const { leftHand, rightHand, nose } = poseData || {};
 
-        const x = pos.x * canvas.width;
-        const y = pos.y * canvas.height;
-        const sideKey = handKey === "leftHand" ? "Left" : "Right";
-        const color = sideKey === "Left" ? "#FF69B4" : "#00FFFF";
+      ["leftHand", "rightHand"].forEach((key) => {
+        const pos = poseData?.[key];
+        if (!pos || pos.visibility <= 0.6) return;
+        const x = pos.x * w,
+          y = pos.y * h;
+        const side = key === "leftHand" ? "Left" : "Right";
+        const color = side === "Left" ? "#FF69B4" : "#00FFFF";
 
-        // 手指拖尾粒子
-        particles.current.push(new Particle(x, y, color, false));
+        particles.current.push(new Particle(x, y, color, "normal"));
 
-        // 手掌爆炸判斷（完全吃 poseData 手勢）
-        const gestureName =
-          sideKey === "Left"
-            ? poseData?.leftHandGesture
-            : poseData?.rightHandGesture;
-
-        if (
-          gestureName === "Open_Palm" &&
-          now - lastExplosionTime.current[sideKey] > 150
-        ) {
-          for (let i = 0; i < 40; i++) {
-            particles.current.push(new Particle(x, y, color, true));
-          }
-          lastExplosionTime.current[sideKey] = now;
+        const gesture = side === "Left" ? poseData?.leftHandGesture : poseData?.rightHandGesture;
+        if (gesture === "Open_Palm" && now - lastActionTime.current[side] > 250) {
+          for (let i = 0; i < 25; i++) particles.current.push(new Particle(x, y, color, "explosion"));
+          lastActionTime.current[side] = now;
         }
       });
 
-      // 更新並繪製所有粒子
+      // 雙手拉開觸發「頭上」愛心（嚴格距離）
+      if (leftHand?.visibility > 0.8 && rightHand?.visibility > 0.8) {
+        const dx = (rightHand.x - leftHand.x) * w;
+        const dy = (rightHand.y - leftHand.y) * h;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        if (distance > w * 0.60 && now - lastActionTime.current.Heart > 1500) {
+          const heartX = nose?.visibility > 0.5 ? nose.x * w : ((leftHand.x + rightHand.x) / 2) * w;
+          const heartY = nose?.visibility > 0.5 ? nose.y * h - 100 : ((leftHand.y + rightHand.y) / 2) * h - 180;
+          createSmallHeart(heartX, heartY);
+          lastActionTime.current.Heart = now;
+        }
+      }
+
+      // 限制最大粒子數 200
+      if (particles.current.length > 200) {
+        particles.current.splice(0, particles.current.length - 200);
+      }
+
       for (let i = particles.current.length - 1; i >= 0; i--) {
         const p = particles.current[i];
         p.update();
-        if (p.alpha <= 0) {
-          particles.current.splice(i, 1);
-        } else {
-          p.draw(ctx);
-        }
+        if (p.alpha <= 0) particles.current.splice(i, 1);
+        else p.draw(ctx);
       }
 
       raf = requestAnimationFrame(render);
@@ -117,27 +140,15 @@ export default function Fireworks({ poseData }) {
   }, [poseData]);
 
   useEffect(() => {
-    const resize = () => {
+    const handleResize = () => {
       if (!canvasRef.current) return;
       canvasRef.current.width = window.innerWidth;
       canvasRef.current.height = window.innerHeight;
     };
-    window.addEventListener("resize", resize);
-    resize();
-    return () => window.removeEventListener("resize", resize);
+    window.addEventListener("resize", handleResize);
+    handleResize();
+    return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  return (
-    <canvas
-      ref={canvasRef}
-      style={{
-        position: "absolute",
-        inset: 0,
-        width: "100%",
-        height: "100%",
-        pointerEvents: "none",
-        zIndex: 100,
-      }}
-    />
-  );
+  return <canvas ref={canvasRef} style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 100 }} />;
 }
