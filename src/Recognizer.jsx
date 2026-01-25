@@ -89,7 +89,7 @@ export default function Recognizer({ onGestureData }) {
         onClick={toggleWebcam} 
         className={`btn btn-sm ${webcamRunning ? 'btn-danger' : 'btn-success'}`}
       >
-        {webcamRunning ? "關閉精準偵測" : "開啟精準偵測"}
+        {webcamRunning ? "Stop Detection" : "Start Detection"}
       </button>
     </div>
   );

@@ -53,7 +53,7 @@ export default function App() {
         }}
       />
 
-      {/* 3. 骨架層 */}
+      {/*  骨架層 */}
       <DraggableSkeleton
         scale={skeletonScale}
         visible={showSkeleton}
@@ -65,14 +65,14 @@ export default function App() {
         <PoseSkeleton onPoseUpdate={setPoseData} hideCanvas={!showSkeleton} />
       </DraggableSkeleton>
 
-      {/* 4. 底部工具列 (佈局更新) */}
+      {/* 底部工具列 (佈局更新) */}
       <div className="w-100 p-2 d-flex align-items-center justify-content-between"
            style={{ background: "#111", borderTop: "1px solid #333", zIndex: 200, position: "absolute", bottom: 0 }}>
         
-        {/* 左區：骨架 */}
+        {/* 骨架 */}
         <div className="d-flex align-items-center gap-2" style={{ flex: 1 }}>
           <button className="btn btn-sm btn-info" onClick={() => setShowSkeleton(!showSkeleton)}>
-            {showSkeleton ? "隱藏骨架" : "顯示骨架"}
+            {showSkeleton ? "Hide Skeleton" : "Show Skeleton"}
           </button>
           <input type="range" min="0.3" max="2" step="0.1" value={skeletonScale} 
                  onChange={(e) => setSkeletonScale(parseFloat(e.target.value))} style={{ width: "60px" }} />
