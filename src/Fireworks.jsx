@@ -59,6 +59,7 @@ export default function Fireworks({ poseData }) {
   const canvasRef = useRef(null);
   const particles = useRef([]);
   const lastActionTime = useRef({ Left: 0, Right: 0, Heart: 0 });
+  const gestureStartTime = useRef({ Left: 0, Right: 0 });
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -66,13 +67,13 @@ export default function Fireworks({ poseData }) {
     let raf;
 
     const createSmallHeart = (centerX, centerY) => {
-      const numPoints = 50; // 點數多一點，輪廓更明顯
+      const numPoints = 30; // 點數多一點，輪廓更明顯
       const scale = 6;
       for (let i = 0; i < numPoints; i++) {
         const t = (i / numPoints) * Math.PI * 2;
         const xOffset = scale * (16 * Math.pow(Math.sin(t), 3));
         const yOffset = -scale * (13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t));
-        const colors = ["#b700ff", "#ff0055", "#00ffa6", "#FFFFFF"];
+        const colors = ["#fb2424", "#f74d85", "#ecebda"];
         const color = colors[Math.floor(Math.random() * colors.length)];
         particles.current.push(new Particle(centerX + xOffset, centerY + yOffset, color, "heart"));
       }
@@ -86,26 +87,59 @@ export default function Fireworks({ poseData }) {
       ctx.fillStyle = "rgba(0,0,0,0.3)";
       ctx.fillRect(0, 0, w, h);
       const now = Date.now();
-
       const { leftHand, rightHand, nose } = poseData || {};
-
       ["leftHand", "rightHand"].forEach((key) => {
         const pos = poseData?.[key];
         if (!pos || pos.visibility <= 0.6) return;
-        const x = pos.x * w,
-          y = pos.y * h;
+
+        const x = pos.x * w, y = pos.y * h;
         const side = key === "leftHand" ? "Left" : "Right";
         const color = side === "Left" ? "#FF69B4" : "#00FFFF";
 
+        // 基礎追蹤粒子（不間斷）
         particles.current.push(new Particle(x, y, color, "normal"));
 
         const gesture = side === "Left" ? poseData?.leftHandGesture : poseData?.rightHandGesture;
-        if (gesture === "Open_Palm" && now - lastActionTime.current[side] > 250) {
-          for (let i = 0; i < 25; i++) particles.current.push(new Particle(x, y, color, "explosion"));
-          lastActionTime.current[side] = now;
+
+        if (gesture === "Open_Palm") {
+          if (gestureStartTime.current[side] === 0) {
+            gestureStartTime.current[side] = now;
+          }
+
+          // 計算目前張開了多久
+          const openDuration = now - gestureStartTime.current[side];
+
+          // 3. 只有在 0.2 秒內 (300ms) 才噴發
+          if (openDuration < 200) {
+            // 這裡維持你原本的間隔（每 100ms 噴一次大陣仗）
+            if (now - lastActionTime.current[side] > 180) {
+              for (let i = 0; i < 40; i++) {
+                particles.current.push(new Particle(x, y, color, "explosion"));
+              }
+              lastActionTime.current[side] = now;
+            }
+          } 
+        } else {
+          // 重置計時器，下次張開才能再次噴 2 秒
+          gestureStartTime.current[side] = 0;
         }
       });
+      // 雙手接觸觸發愛心（向上飄版本）
+      if (leftHand?.visibility > 0.5 && rightHand?.visibility > 0.5) {
+        const dx = (rightHand.x - leftHand.x) * w;
+        const dy = (rightHand.y - leftHand.y) * h;
+        const distance = Math.sqrt(dx * dx + dy * dy);
 
+        // 當距離小於 100 像素時觸發
+        if (distance < 80 && now - lastActionTime.current.Heart > 400) {
+          const centerX = ((leftHand.x + rightHand.x) / 2) * w;
+          const centerY = ((leftHand.y + rightHand.y) / 2) * h;
+
+          // 呼叫產生函式
+          createSmallHeart(centerX, centerY);
+          lastActionTime.current.Heart = now;
+        }
+      }
      //  加膝蓋粒子
       const leftKnee = poseData?.leftKnee;
       const rightKnee = poseData?.rightKnee;
@@ -122,19 +156,7 @@ export default function Fireworks({ poseData }) {
         particles.current.push(new Particle(x, y, "#FFA500", false)); // 右膝橘色
       }
 
-      // 雙手拉開觸發「頭上」愛心（嚴格距離）
-      if (leftHand?.visibility > 0.8 && rightHand?.visibility > 0.8) {
-        const dx = (rightHand.x - leftHand.x) * w;
-        const dy = (rightHand.y - leftHand.y) * h;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-
-        if (distance > w * 0.60 && now - lastActionTime.current.Heart > 1500) {
-          const heartX = nose?.visibility > 0.5 ? nose.x * w : ((leftHand.x + rightHand.x) / 2) * w;
-          const heartY = nose?.visibility > 0.5 ? nose.y * h - 100 : ((leftHand.y + rightHand.y) / 2) * h - 180;
-          createSmallHeart(heartX, heartY);
-          lastActionTime.current.Heart = now;
-        }
-      }
+      
 
       // 限制最大粒子數 200
       if (particles.current.length > 200) {

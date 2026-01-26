@@ -78,9 +78,9 @@ export default function DraggableYouTube({
         }} />
       )}
 
-      {/* 梯形剪裁層 */}
+     {/* 梯形剪裁層 */}
       <div
-        style={{
+          style={{
           width: "100%",
           height: "100%",
           clipPath: "polygon(15% 0%, 85% 0%, 100% 100%, 0% 100%)",
@@ -88,7 +88,7 @@ export default function DraggableYouTube({
           overflow: "hidden",
           pointerEvents: "auto" // 確保內層可以點擊
         }}
-      >
+        >
         <YouTube 
           videoId={videoId} 
           opts={videoOptions} 
