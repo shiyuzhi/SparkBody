@@ -66,7 +66,7 @@ export default function Fireworks({ poseData }) {
     let raf;
 
     const createSmallHeart = (centerX, centerY) => {
-      const numPoints = 60; // 點數多一點，輪廓更明顯
+      const numPoints = 50; // 點數多一點，輪廓更明顯
       const scale = 6;
       for (let i = 0; i < numPoints; i++) {
         const t = (i / numPoints) * Math.PI * 2;
@@ -105,6 +105,22 @@ export default function Fireworks({ poseData }) {
           lastActionTime.current[side] = now;
         }
       });
+
+     //  在這裡加膝蓋粒子
+      const leftKnee = poseData?.leftKnee;
+      const rightKnee = poseData?.rightKnee;
+
+      if (leftKnee && leftKnee.visibility > 0.5) {
+        const x = leftKnee.x * canvas.width;
+        const y = leftKnee.y * canvas.height;
+        particles.current.push(new Particle(x, y, "#00ff66", false)); // 左膝
+      }
+
+      if (rightKnee && rightKnee.visibility > 0.5) {
+        const x = rightKnee.x * canvas.width;
+        const y = rightKnee.y * canvas.height;
+        particles.current.push(new Particle(x, y, "#FFA500", false)); // 右膝橘色
+      }
 
       // 雙手拉開觸發「頭上」愛心（嚴格距離）
       if (leftHand?.visibility > 0.8 && rightHand?.visibility > 0.8) {

@@ -1,3 +1,4 @@
+//recognizer.jsx
 import React, { useEffect, useRef, useState } from "react";
 import { GestureRecognizer, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3";
 
