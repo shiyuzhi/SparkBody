@@ -13,7 +13,8 @@ export default function PoseSkeleton({ onPoseUpdate, hideCanvas = false }) {
     let isMounted = true;
 
     const holistic = new Holistic({
-      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${file}`,
+      locateFile: (file) =>
+        `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${file}`,
     });
 
     holistic.setOptions({
@@ -26,51 +27,91 @@ export default function PoseSkeleton({ onPoseUpdate, hideCanvas = false }) {
 
     holistic.onResults((results) => {
       if (!isMounted) return;
+
       const canvas = canvasRef.current;
       const ctx = canvas?.getContext("2d");
 
+      // 頭部移動判斷
       let isHeadMoving = false;
       const currentHead = results.poseLandmarks?.[0];
 
       if (currentHead && lastHeadPos.current) {
         const dx = currentHead.x - lastHeadPos.current.x;
         const dy = currentHead.y - lastHeadPos.current.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        if (distance > 0.05) isHeadMoving = true;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > 0.05) isHeadMoving = true;
       }
-      if (currentHead) lastHeadPos.current = { x: currentHead.x, y: currentHead.y };
+      if (currentHead) {
+        lastHeadPos.current = { x: currentHead.x, y: currentHead.y };
+      }
 
-      // 更新 poseData
+      // 回傳資料（完全不動你原本邏輯）
       if (onPoseUpdate) {
-        const flip = (lm) => (lm ? { x: 1 - lm.x, y: lm.y, visibility: lm.visibility ?? 1 } : null);
+        const flip = (lm) =>
+          lm
+            ? { x: 1 - lm.x, y: lm.y, visibility: lm.visibility ?? 1 }
+            : null;
+
         onPoseUpdate({
           head: flip(currentHead),
-          leftHand: flip(results.leftHandLandmarks?.[8] || results.poseLandmarks?.[15]),
-          rightHand: flip(results.rightHandLandmarks?.[8] || results.poseLandmarks?.[16]),
+          leftHand: flip(
+            results.leftHandLandmarks?.[8] ||
+              results.poseLandmarks?.[15]
+          ),
+          rightHand: flip(
+            results.rightHandLandmarks?.[8] ||
+              results.poseLandmarks?.[16]
+          ),
           leftKnee: flip(results.poseLandmarks?.[25]),
           rightKnee: flip(results.poseLandmarks?.[26]),
           isHeadMoving,
         });
       }
 
-      // 若隱藏畫布，則不繪製骨架
-      if (!hideCanvas && ctx) {
-        ctx.save();
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.translate(canvas.width, 0);
-        ctx.scale(-1, 1);
+      if (hideCanvas || !ctx) return;
 
-        if (results.poseLandmarks) {
-          drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS, { color: "#e6ffdf", lineWidth: 8 });
-        }
-        if (results.leftHandLandmarks) {
-          drawConnectors(ctx, results.leftHandLandmarks, HAND_CONNECTIONS, { color: "#ffffff", lineWidth: 6 });
-        }
-        if (results.rightHandLandmarks) {
-          drawConnectors(ctx, results.rightHandLandmarks, HAND_CONNECTIONS, { color: "#ffffff", lineWidth: 6 });
-        }
-        ctx.restore();
+      ctx.save();
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.translate(canvas.width, 0);
+      ctx.scale(-1, 1);
+
+      // Pose：畫到手腕為止，排除手掌三角形（17–22）
+      if (results.poseLandmarks) {
+        const palmIndices = [17, 18, 19, 20, 21, 22];
+        const poseNoPalm = POSE_CONNECTIONS.filter(
+          ([a, b]) =>
+            !palmIndices.includes(a) &&
+            !palmIndices.includes(b)
+        );
+
+        drawConnectors(
+          ctx,
+          results.poseLandmarks,
+          poseNoPalm,
+          { color: "#e6ffdf", lineWidth: 8 }
+        );
       }
+
+      // Hand：負責整個手掌（含三角形）
+      if (results.leftHandLandmarks) {
+        drawConnectors(
+          ctx,
+          results.leftHandLandmarks,
+          HAND_CONNECTIONS,
+          { color: "#ffffff", lineWidth: 6 }
+        );
+      }
+
+      if (results.rightHandLandmarks) {
+        drawConnectors(
+          ctx,
+          results.rightHandLandmarks,
+          HAND_CONNECTIONS,
+          { color: "#ffffff", lineWidth: 6 }
+        );
+      }
+
+      ctx.restore();
     });
 
     let camera = null;
@@ -84,7 +125,9 @@ export default function PoseSkeleton({ onPoseUpdate, hideCanvas = false }) {
         width: window.innerWidth,
         height: window.innerHeight,
       });
-      camera.start().catch((err) => console.warn("Camera start failed:", err));
+      camera.start().catch((err) =>
+        console.warn("Camera start failed:", err)
+      );
     }
 
     return () => {
