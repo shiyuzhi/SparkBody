@@ -5,9 +5,10 @@ import { GestureRecognizer, FilesetResolver } from "https://cdn.jsdelivr.net/npm
 export default function Recognizer({ onGestureData }) {
   const videoRef = useRef(null);
   const [gestureRecognizer, setGestureRecognizer] = useState(null);
-  const [webcamRunning, setWebcamRunning] = useState(false);
+  const [webcamRunning, setWebcamRunning] = useState(true); // 預設開啟開關
   const requestRef = useRef();
 
+  // 1. 初始化辨識器模型
   useEffect(() => {
     const initRecognizer = async () => {
       try {
@@ -31,8 +32,31 @@ export default function Recognizer({ onGestureData }) {
     return () => { if (requestRef.current) cancelAnimationFrame(requestRef.current); };
   }, []);
 
+  // 核心修改：當模型準備好後，自動啟動相機
+  useEffect(() => {
+    if (gestureRecognizer && webcamRunning) {
+      // 這裡直接呼叫啟動相機的邏輯（不透過按鈕）
+      startWebcam();
+    }
+  }, [gestureRecognizer]); 
+
+  // 將開啟相機邏輯獨立出來，方便重複使用
+  const startWebcam = async () => {
+    if (!videoRef.current) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      videoRef.current.srcObject = stream;
+      videoRef.current.onloadedmetadata = () => {
+        videoRef.current.play();
+        setWebcamRunning(true);
+      };
+    } catch (err) {
+      console.error("自動開啟相機失敗:", err);
+    }
+  };
+  // ---------------------------------------------------------
+
   const predict = () => {
-    // 即使影片隱藏，readyState 依然要是 4 (HAVE_ENOUGH_DATA) 才能辨識
     if (gestureRecognizer && videoRef.current?.readyState === 4) {
       const nowInMs = performance.now();
       const results = gestureRecognizer.recognizeForVideo(videoRef.current, nowInMs);
@@ -41,9 +65,9 @@ export default function Recognizer({ onGestureData }) {
     if (webcamRunning) requestRef.current = requestAnimationFrame(predict);
   };
 
+  // 保留手動切換功能
   const toggleWebcam = async () => {
     if (!videoRef.current) return;
-    
     if (webcamRunning) {
       const stream = videoRef.current.srcObject;
       if (stream) stream.getTracks().forEach(track => track.stop());
@@ -51,23 +75,14 @@ export default function Recognizer({ onGestureData }) {
       setWebcamRunning(false);
       if (onGestureData) onGestureData(null);
     } else {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        videoRef.current.srcObject = stream;
-        videoRef.current.onloadedmetadata = () => {
-          videoRef.current.play();
-          setWebcamRunning(true);
-        };
-      } catch (err) {
-        alert("無法開啟相機: " + err.message);
-      }
+      startWebcam(); // 點擊時啟動
     }
   };
 
   useEffect(() => {
     if (webcamRunning) requestRef.current = requestAnimationFrame(predict);
     else if (requestRef.current) cancelAnimationFrame(requestRef.current);
-  }, [webcamRunning]);
+  }, [webcamRunning, gestureRecognizer]); // 加入 gestureRecognizer 確保模型載入後能啟動
 
   return (
     <div className="d-flex align-items-center">
@@ -84,7 +99,6 @@ export default function Recognizer({ onGestureData }) {
           pointerEvents: "none",
         }}
       />
-      
       <button 
         onClick={toggleWebcam} 
         className={`btn btn-sm ${webcamRunning ? 'btn-danger' : 'btn-success'}`}
