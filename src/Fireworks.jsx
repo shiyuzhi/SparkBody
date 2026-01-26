@@ -109,9 +109,9 @@ export default function Fireworks({ poseData }) {
           // 計算目前張開了多久
           const openDuration = now - gestureStartTime.current[side];
 
-          // 3. 只有在 0.2 秒內 (300ms) 才噴發
+          // 只有在 0.2 秒內 (300ms) 才噴發
           if (openDuration < 200) {
-            // 這裡維持你原本的間隔（每 100ms 噴一次大陣仗）
+            // 這裡維持原本的間隔（每 100ms 噴一次大陣仗）
             if (now - lastActionTime.current[side] > 180) {
               for (let i = 0; i < 40; i++) {
                 particles.current.push(new Particle(x, y, color, "explosion"));
@@ -120,7 +120,7 @@ export default function Fireworks({ poseData }) {
             }
           } 
         } else {
-          // 重置計時器，下次張開才能再次噴 2 秒
+          // 重置計時器，下次張開才能再次噴
           gestureStartTime.current[side] = 0;
         }
       });
