@@ -71,7 +71,6 @@ export default function Recognizer({ onGestureData }) {
 
   return (
     <div className="d-flex align-items-center">
-      {/* 關鍵：video 必須存在於 DOM 中，但我們把它徹底隱藏 */}
       <video
         ref={videoRef}
         autoPlay

@@ -106,7 +106,7 @@ export default function Fireworks({ poseData }) {
         }
       });
 
-     //  在這裡加膝蓋粒子
+     //  加膝蓋粒子
       const leftKnee = poseData?.leftKnee;
       const rightKnee = poseData?.rightKnee;
 
