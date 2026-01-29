@@ -130,7 +130,7 @@ export default function App() {
         <PoseSkeleton 
           onPoseUpdate={setPoseData} 
           onGestureData={setGestureData} 
-          hideCanvas={!showSkeleton} 
+          hideCanvas={!showSkeleton}
           isLowEnd={isLowEnd} 
         />
       </DraggableSkeleton>
