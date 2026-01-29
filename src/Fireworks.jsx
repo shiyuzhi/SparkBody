@@ -105,7 +105,7 @@ export default function Fireworks({ poseData, isLowEnd }) {
         const pos = poseData?.[key];
         if (!pos || pos.visibility <= 0.6) return;
 
-        const x = pos.x * w, y = pos.y * h;
+        const x = (1 - pos.x) * w, y = pos.y * h;
         const side = key === "leftHand" ? "left" : "right";
         const gesture = poseData?.[side + "HandGesture"];
         const color = side === "left" ? "#FF69B4" : "#00FFFF";

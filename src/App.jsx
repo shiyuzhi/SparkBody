@@ -4,7 +4,6 @@ import DraggableSkeleton from "./DraggableSkeleton";
 import DraggableYouTube from "./DraggableyouTube";
 import PoseSkeleton from "./PoseSkeleton";
 import Fireworks from "./Fireworks";
-import Recognizer from "./Recognizer";
 
 export default function App() {
   const [showSkeleton, setShowSkeleton] = useState(true);
@@ -14,43 +13,67 @@ export default function App() {
   const [showMusic, setShowMusic] = useState(false);
   const [videoId, setVideoId] = useState("4rgSzQwe5DQ");
   const [inputUrl, setInputUrl] = useState("https://youtu.be/4rgSzQwe5DQ");
+  
+  // --- 歌單與類別狀態 ---
   const [midiList, setMidiList] = useState([]);
+  const [categories, setCategories] = useState([]); 
+  const [selectedCategory, setSelectedCategory] = useState(""); 
+  
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   const [windowHeight, setWindowHeight] = useState(window.innerHeight);
 
-  // --- 新增：效能分級偵測 ---
+  // 效能分級偵測
   const isLowEnd = useMemo(() => {
     return (
-      navigator.hardwareConcurrency <= 4 || // CPU 核心數少
-      /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) || // 移動裝置
-      windowWidth < 1024 // 螢幕較小
+      navigator.hardwareConcurrency <= 4 || 
+      /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) || 
+      windowWidth < 1024
     );
   }, [windowWidth]);
 
-  useEffect(() => {
+ useEffect(() => {
     const handleResize = () => {
       setWindowWidth(window.innerWidth);
       setWindowHeight(window.innerHeight);
     };
     window.addEventListener("resize", handleResize);
     
+    // 抓類別
+    fetch('https://imuse.ncnu.edu.tw/Midi-library/api/categories')
+      .then(res => res.json())
+      .then(data => setCategories(Array.isArray(data) ? data : []))
+      .catch(err => console.error("Category Error:", err));
+
+    // 抓MIDI 列表 移除 console.log)
     fetch('https://imuse.ncnu.edu.tw/Midi-library/api/midis')
       .then(res => res.json())
-      .then(data => { if (data.items) setMidiList(data.items); })
-      .catch(err => console.error("MIDI API Error:", err));
+      .then(data => { 
+        // 抓到陣列，不論資料是在 data 還是 data.items
+        setMidiList(data.items || data || []); 
+      })
+      .catch(err => console.error("MIDI Error:", err));
 
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
+  // 比對
+  const filteredMidiList = useMemo(() => {
+    if (!selectedCategory) return midiList;
+
+    return midiList.filter(midi => {
+      const isInArray = Array.isArray(midi.categories) && midi.categories.includes(selectedCategory);
+      const isMatchText = midi.categories_text === selectedCategory;
+      return isInArray || isMatchText;
+    });
+  }, [selectedCategory, midiList]);
+
   const isLandscapePhone = windowHeight < 500;
   const isMobile = windowWidth < 768;
 
-  // 整合座標與手勢資料，傳給 Fireworks ---
   const integratedPoseData = useMemo(() => {
     if (!poseData) return null;
     return {
       ...poseData,
-      // 抓到的手勢名稱對應到左右手
       leftHandGesture: gestureData?.[0]?.[0]?.categoryName || "None",
       rightHandGesture: gestureData?.[1]?.[0]?.categoryName || "None"
     };
@@ -58,6 +81,7 @@ export default function App() {
 
   const handleUrlChange = (e_or_url) => {
     const url = typeof e_or_url === 'string' ? e_or_url : e_or_url.target.value;
+    if (!url) return;
     setInputUrl(url);
     const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
     const match = url.match(regExp);
@@ -69,7 +93,8 @@ export default function App() {
 
   return (
     <div style={{ height: "100dvh", width: "100vw", backgroundColor: "black", overflow: "hidden", position: "relative" }}>
-      {/* 雙手狀態除錯面板 */}
+      
+      {/* 雙手狀態面板 */}
       <div style={{
         position: "absolute", bottom: isLandscapePhone ? "60px" : "85px", left: "15px", zIndex: 1000,
         background: "rgba(0, 0, 0, 0.8)", padding: "8px 12px", borderRadius: "10px",
@@ -91,7 +116,6 @@ export default function App() {
         </div>
       </div>
 
-      {/* 特效層：傳入整合後的資料與效能等級 */}
       <Fireworks poseData={integratedPoseData} isLowEnd={isLowEnd} />
 
       <DraggableSkeleton
@@ -105,7 +129,7 @@ export default function App() {
       >
         <PoseSkeleton 
           onPoseUpdate={setPoseData} 
-          onGestureData={setGestureData} //  Recognizer 手勢資料回傳
+          onGestureData={setGestureData} 
           hideCanvas={!showSkeleton} 
           isLowEnd={isLowEnd} 
         />
@@ -129,7 +153,6 @@ export default function App() {
                    onChange={(e) => setSkeletonScale(parseFloat(e.target.value))} 
                    style={{ width: "60px" }} />
           )}
-          {/* 效能分級標籤 */}
           <span className={`badge ${isLowEnd ? 'bg-secondary' : 'bg-success'} d-none d-md-inline`}>
             {isLowEnd ? "Lite Mode" : "High Performance"}
           </span>
@@ -143,17 +166,33 @@ export default function App() {
         </div>
 
         <div className="ms-auto d-flex align-items-center gap-1 gap-md-2" style={{ zIndex: 10, flexShrink: 0 }}>
+          
+          {/* 類別選單 */}
+          <select 
+            className="form-select form-select-sm bg-dark text-info border-secondary shadow-none"
+            style={{ width: isMobile ? "85px" : "110px", fontSize: "0.75rem" }}
+            onChange={(e) => setSelectedCategory(e.target.value)}
+            value={selectedCategory}
+          >
+            <option value="">所有分類</option>
+            {categories.map((cat, idx) => (
+              <option key={idx} value={cat}>{cat}</option>
+            ))}
+          </select>
+
+          {/* 歌曲選單 (根據類別過濾) */}
           <select 
             className="form-select form-select-sm bg-dark text-warning border-secondary shadow-none"
-            style={{ width: isMobile ? "90px" : "160px", fontSize: "0.8rem" }}
+            style={{ width: isMobile ? "95px" : "145px", fontSize: "0.75rem" }}
             onChange={(e) => handleUrlChange(e.target.value)}
             value={inputUrl}
           >
             <option value="">快速點歌</option>
-            {midiList.map(midi => (
+            {filteredMidiList.map(midi => (
               <option key={midi.id} value={midi.description}>{midi.title}</option>
             ))}
           </select>
+
           <button className="btn btn-sm btn-warning" onClick={() => setShowMusic(!showMusic)}>
               {isMobile ? "🎵" : "Music"}
           </button>

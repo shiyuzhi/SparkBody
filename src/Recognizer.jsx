@@ -27,7 +27,7 @@ export default function Recognizer({ onGestureData, isLowEnd = false }) {
         const recognizer = await GestureRecognizer.createFromOptions(vision, {
           baseOptions: {
             modelAssetPath: "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",
-            // 文書機建議強制 CPU，因為 MediaPipe 的 GPU delegate 在無外顯機器上極不穩定
+            // 低階電腦建議強制 CPU，因為 MediaPipe 的 GPU delegate 在無外顯機器上極不穩定
             delegate: isLowEnd ? "CPU" : "GPU",
           },
           runningMode: "VIDEO",
