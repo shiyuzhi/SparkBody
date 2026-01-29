@@ -9,9 +9,9 @@ class Particle {
     this.type = type;
     this.isLowEnd = isLowEnd;
     this.alpha = 1;
-    this.friction = 0.94; // 原本參數
+    this.friction = 0.94;
     
-    // --- 保持你原本的消失速度參數 ---
+    //保持原本的消失速度參數 
     if (type === "heart") {
       this.decay = 0.02; 
     } else if (type === "explosion") {
@@ -50,8 +50,12 @@ class Particle {
   draw(ctx) {
     if (this.alpha <= 0) return;
     
-    // 手機端 (isLowEnd) 跳過 shadowBlur 以提升效能，其餘邏輯不變
+    // 手機端 (isLowEnd) 邏輯
     if (this.isLowEnd) {
+      this.alpha -= 0.015; 
+
+      if (this.alpha <= 0) return; 
+
       ctx.globalAlpha = this.alpha;
       ctx.fillStyle = this.color;
       ctx.beginPath();
