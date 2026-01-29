@@ -22,7 +22,7 @@ export default function DraggableSkeleton({
         ref={nodeRef}
         className="position-absolute"
         style={{
-          zIndex: 100,  // 比火花低一點
+          zIndex: 100,  // 比火花低
           top: initialPosition.top,
           left: initialPosition.left,
           display: visible ? "block" : "none",

@@ -4,70 +4,66 @@ import { Holistic, POSE_CONNECTIONS, HAND_CONNECTIONS } from "@mediapipe/holisti
 import { Camera } from "@mediapipe/camera_utils";
 import { drawConnectors } from "@mediapipe/drawing_utils";
 
-export default function PoseSkeleton({ onPoseUpdate, hideCanvas = false }) {
+export default function PoseSkeleton({ onPoseUpdate, onGestureData, hideCanvas = false, isLowEnd = false }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
-  const lastHeadPos = useRef(null);
+  const frameCount = useRef(0);
 
   useEffect(() => {
     let isMounted = true;
 
     const holistic = new Holistic({
-      locateFile: (file) =>
-        `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${file}`,
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${file}`,
     });
 
     holistic.setOptions({
-      modelComplexity: 1,
-      smoothLandmarks: true,
+      modelComplexity: 0,
+      smoothLandmarks: !isLowEnd,
       minDetectionConfidence: 0.5,
       minTrackingConfidence: 0.5,
-      refineLandmarks: true,
+      refineLandmarks: false,
     });
 
     holistic.onResults((results) => {
       if (!isMounted) return;
+      const detectGesture = (handLandmarks) => {
+        if (!handLandmarks) return "None";
+        
+        // 0掌心, 8食指尖, 5食指根, 12中指尖, 9中指根
+        // 指尖與掌心的距離明顯大於指根與掌心的距離，則判定為張開 (Open_Palm)
+        const isIndexOpen = handLandmarks[8].y < handLandmarks[5].y - 0.03;
+        const isMiddleOpen = handLandmarks[12].y < handLandmarks[9].y - 0.03;
+        
+        return (isIndexOpen && isMiddleOpen) ? "Open_Palm" : "Closed_Fist";
+      };
 
-      const canvas = canvasRef.current;
-      const ctx = canvas?.getContext("2d");
+      const leftG = detectGesture(results.leftHandLandmarks);
+      const rightG = detectGesture(results.rightHandLandmarks);
 
-      // 頭部移動判斷
-      let isHeadMoving = false;
-      const currentHead = results.poseLandmarks?.[0];
-
-      if (currentHead && lastHeadPos.current) {
-        const dx = currentHead.x - lastHeadPos.current.x;
-        const dy = currentHead.y - lastHeadPos.current.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist > 0.05) isHeadMoving = true;
+      // Recognizer 格式回傳給 App 的 setGestureData ---
+      if (onGestureData) {
+        onGestureData([
+          [{ categoryName: leftG }], // 左手
+          [{ categoryName: rightG }]  // 右手
+        ]);
       }
-      if (currentHead) {
-        lastHeadPos.current = { x: currentHead.x, y: currentHead.y };
-      }
 
-      // 回傳資料（完全不動你原本邏輯）
+      // (整合手勢名稱到 poseData) ---
       if (onPoseUpdate) {
-        const flip = (lm) =>
-          lm
-            ? { x: 1 - lm.x, y: lm.y, visibility: lm.visibility ?? 1 }
-            : null;
-
+        const flip = (lm) => lm ? { x: lm.x, y: lm.y, visibility: lm.visibility ?? 1 } : null;
         onPoseUpdate({
-          head: flip(currentHead),
-          leftHand: flip(
-            results.leftHandLandmarks?.[8] ||
-              results.poseLandmarks?.[15]
-          ),
-          rightHand: flip(
-            results.rightHandLandmarks?.[8] ||
-              results.poseLandmarks?.[16]
-          ),
+          head: flip(results.poseLandmarks?.[0]),
+          leftHand: flip(results.leftHandLandmarks?.[8] || results.poseLandmarks?.[15]),
+          rightHand: flip(results.rightHandLandmarks?.[8] || results.poseLandmarks?.[16]),
           leftKnee: flip(results.poseLandmarks?.[25]),
           rightKnee: flip(results.poseLandmarks?.[26]),
-          isHeadMoving,
+          leftHandGesture: leftG,
+          rightHandGesture: rightG
         });
       }
 
+      const canvas = canvasRef.current;
+      const ctx = canvas?.getContext("2d");
       if (hideCanvas || !ctx) return;
 
       ctx.save();
@@ -75,59 +71,62 @@ export default function PoseSkeleton({ onPoseUpdate, hideCanvas = false }) {
       ctx.translate(canvas.width, 0);
       ctx.scale(-1, 1);
 
-      // Pose：畫到手腕為止，排除手掌三角形（17–22）
+      const lineW = isLowEnd ? 3 : 6;
+
       if (results.poseLandmarks) {
-        const palmIndices = [17, 18, 19, 20, 21, 22];
+        const palmIndices = [9, 10, 17, 18, 19, 20, 21, 22];
         const poseNoPalm = POSE_CONNECTIONS.filter(
-          ([a, b]) =>
-            !palmIndices.includes(a) &&
-            !palmIndices.includes(b)
+          ([a, b]) => !palmIndices.includes(a) && !palmIndices.includes(b)
         );
+        drawConnectors(ctx, results.poseLandmarks, poseNoPalm, { color: "#e6ffdf", lineWidth: lineW });
 
-        drawConnectors(
-          ctx,
-          results.poseLandmarks,
-          poseNoPalm,
-          { color: "#e6ffdf", lineWidth: 8 }
-        );
+        if (!isLowEnd && results.poseLandmarks[0]) {
+          drawSmile(ctx, results.poseLandmarks, canvas.width, canvas.height);
+        }
       }
 
-      // Hand：負責整個手掌（含三角形）
-      if (results.leftHandLandmarks) {
-        drawConnectors(
-          ctx,
-          results.leftHandLandmarks,
-          HAND_CONNECTIONS,
-          { color: "#ffffff", lineWidth: 6 }
-        );
-      }
-
-      if (results.rightHandLandmarks) {
-        drawConnectors(
-          ctx,
-          results.rightHandLandmarks,
-          HAND_CONNECTIONS,
-          { color: "#ffffff", lineWidth: 6 }
-        );
-      }
+      if (results.leftHandLandmarks) 
+        drawConnectors(ctx, results.leftHandLandmarks, HAND_CONNECTIONS, { color: "#ffffff", lineWidth: lineW - 1 });
+      if (results.rightHandLandmarks)
+        drawConnectors(ctx, results.rightHandLandmarks, HAND_CONNECTIONS, { color: "#ffffff", lineWidth: lineW - 1 });
 
       ctx.restore();
     });
+
+    function drawSmile(ctx, landmarks, w, h) {
+      const nose = landmarks[0];
+      const leftEye = landmarks[1];
+      const rightEye = landmarks[4];
+      if (!nose || !leftEye || !rightEye) return;
+      const eyeDist = Math.abs(leftEye.x - rightEye.x);
+      const mouthY = (nose.y + eyeDist * 0.8) * h;
+      const mouthWidth = eyeDist * w * 0.8;
+      const startX = nose.x * w - mouthWidth / 2;
+      const endX = nose.x * w + mouthWidth / 2;
+      const controlY = mouthY + (eyeDist * h * 0.4);
+      ctx.beginPath();
+      ctx.moveTo(startX, mouthY);
+      ctx.quadraticCurveTo(nose.x * w, controlY, endX, mouthY);
+      ctx.strokeStyle = "#e6ffdf"; 
+      ctx.lineWidth = 6;
+      ctx.stroke();
+    }
 
     let camera = null;
     if (videoRef.current) {
       camera = new Camera(videoRef.current, {
         onFrame: async () => {
-          if (isMounted && videoRef.current) {
+          if (!isMounted || !videoRef.current) return;
+          frameCount.current++;
+          const skipThreshold = isLowEnd ? 2 : 1;
+          if (frameCount.current % skipThreshold === 0) {
             await holistic.send({ image: videoRef.current });
           }
         },
-        width: window.innerWidth,
-        height: window.innerHeight,
+        width: isLowEnd ? 160 : 320,
+        height: isLowEnd ? 120 : 240,
       });
-      camera.start().catch((err) =>
-        console.warn("Camera start failed:", err)
-      );
+      camera.start().catch((err) => console.warn("Camera failed:", err));
     }
 
     return () => {
@@ -135,7 +134,7 @@ export default function PoseSkeleton({ onPoseUpdate, hideCanvas = false }) {
       if (camera) camera.stop();
       holistic.close();
     };
-  }, [onPoseUpdate, hideCanvas]);
+  }, [onPoseUpdate, onGestureData, hideCanvas, isLowEnd]);
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
@@ -145,12 +144,8 @@ export default function PoseSkeleton({ onPoseUpdate, hideCanvas = false }) {
         width={window.innerWidth}
         height={window.innerHeight}
         style={{
-          width: "100%",
-          height: "100%",
-          objectFit: "contain",
-          background: "transparent",
-          pointerEvents: "none",
-          zIndex: 1,
+          width: "100%", height: "100%", objectFit: "contain",
+          background: "transparent", pointerEvents: "none", zIndex: 1,
           display: hideCanvas ? "none" : "block",
         }}
       />

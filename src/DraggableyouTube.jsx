@@ -54,7 +54,7 @@ export default function DraggableYouTube({
   return (
     <div
       style={{
-        position: "fixed", // 通常這種漂浮組件用 fixed 較多
+        position: "fixed",
         left: position.left,
         top: position.top,
         width: width,

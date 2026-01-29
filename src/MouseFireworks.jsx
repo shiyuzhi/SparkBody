@@ -5,7 +5,6 @@ export default function MouseFireworks() {
   const svgRef = useRef(null);
   const pointer = useRef({ x: 0, y: 0 });
 
-  // 追蹤滑鼠位置 
   useEffect(() => {
     const handlePointerMove = (e) => {
       pointer.current.x = e.clientX;
@@ -76,7 +75,6 @@ export default function MouseFireworks() {
     // 動態 Timeline
     gsap.timeline({ 
         onComplete: () => {
-          // 修正點：加上檢查，避免 removeChild 時元素已不在 DOM 中
           if (stage.contains(firework)) {
             stage.removeChild(firework);
           }
