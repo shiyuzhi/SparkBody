@@ -24,12 +24,14 @@ export default function App() {
 
   // 效能分級偵測
   const isLowEnd = useMemo(() => {
-    return (
-      navigator.hardwareConcurrency <= 4 || 
-      /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) || 
-      windowWidth < 1024
-    );
-  }, [windowWidth]);
+  const isWeakCPU = navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2;
+  // 軟體環境 (這才是修復 iPad Chrome 的關鍵) ---
+  // CriOS = Chrome in iOS。
+  // 只要是 iOS 上的 Chrome，為了避開那個 Bug，強迫它跑 Lite mode。
+  const isIOSChrome = /CriOS/i.test(navigator.userAgent);
+  const isSmallScreen = windowWidth < 600;
+  return isWeakCPU || isIOSChrome || isSmallScreen;
+}, [windowWidth]);
 
  useEffect(() => {
     const handleResize = () => {

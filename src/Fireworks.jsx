@@ -9,14 +9,15 @@ class Particle {
     this.type = type;
     this.isLowEnd = isLowEnd;
     this.alpha = 1;
-    this.friction = 0.94; 
-  
+    this.friction = 0.94;
+
+    // 調整衰減速度：稍微提高消失門檻，防止殘影
     if (type === "heart") {
-      this.decay = 0.05; 
+      this.decay = 0.06;
     } else if (type === "explosion") {
-      this.decay = 0.08;   
+      this.decay = 0.09;
     } else {
-      this.decay = 0.025;  
+      this.decay = 0.04;
     }
 
     if (type === "explosion") {
@@ -47,32 +48,45 @@ class Particle {
   }
 
   draw(ctx) {
-    if (this.alpha <= 0) return;
-    
-    // 手機端 (isLowEnd) 跳過 shadowBlur 以提升效能
+    if (this.alpha <= 0.1) return;
+
     if (this.isLowEnd) {
+      // Lite mode
+      ctx.globalAlpha = this.alpha;
+      ctx.globalCompositeOperation = "source-over";
+      ctx.fillStyle = this.color;
+      
+      // 如果是爆炸或射線十字星
+      if (this.type === "explosion" || this.type === "ray") {
+        ctx.beginPath();
+        ctx.moveTo(this.x - this.size, this.y);
+        ctx.lineTo(this.x + this.size, this.y);
+        ctx.moveTo(this.x, this.y - this.size);
+        ctx.lineTo(this.x, this.y + this.size);
+        ctx.strokeStyle = this.color;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      } else {
+        // 一般移動粒子維持圓點
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else {
+      // High Performance (維持原樣，有光暈)
+      ctx.save();
       ctx.globalAlpha = this.alpha;
       ctx.fillStyle = this.color;
+      if (this.type === "heart" || this.type === "explosion") {
+        ctx.globalCompositeOperation = "lighter";
+        ctx.shadowBlur = 8;
+        ctx.shadowColor = this.color;
+      }
       ctx.beginPath();
       ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
       ctx.fill();
-      return;
+      ctx.restore();
     }
-
-    ctx.save();
-    ctx.globalAlpha = this.alpha;
-    ctx.fillStyle = this.color;
-    
-    if (this.type === "heart" || this.type === "explosion") {
-      ctx.globalCompositeOperation = "lighter";
-      ctx.shadowBlur = 8;
-      ctx.shadowColor = this.color;
-    }
-    
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
   }
 }
 
@@ -83,36 +97,36 @@ export default function Fireworks({ poseData, isLowEnd }) {
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d");
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d", { alpha: true });
     let raf;
 
     const createSmallHeart = (centerX, centerY) => {
-    const numPoints = 40; // 增加點的密度，解決碎裂感
-    const scale = 5;
-    const offsetY = centerY - 80; 
+      const numPoints = isLowEnd ? 20 : 40;
+      const scale = 5;
+      const offsetY = centerY - 80;
 
-    for (let i = 0; i < numPoints; i++) {
-      const t = (i / numPoints) * Math.PI * 2;
-      const xOffset = scale * (16 * Math.pow(Math.sin(t), 3));
-      const yOffset = -scale * (13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t));
-      const color = i % 2 === 0 ? "#ff4d4d" : "#ff85a2";
-      
-      const p = new Particle(centerX + xOffset, offsetY + yOffset, color, "heart", isLowEnd);
-      
-      // 不要亂噴
-      p.vx = (Math.random() - 0.5) * 0.5; // 降低初始隨機速度
-      p.vy = (Math.random() - 0.5) * 0.5; 
-      
-      particles.current.push(p);
-    }
-  };
+      for (let i = 0; i < numPoints; i++) {
+        const t = (i / numPoints) * Math.PI * 2;
+        const xOffset = scale * (16 * Math.pow(Math.sin(t), 3));
+        const yOffset = -scale * (13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t));
+        const color = i % 2 === 0 ? "#ff4d4d" : "#ff85a2";
+
+        const p = new Particle(centerX + xOffset, offsetY + yOffset, color, "heart", isLowEnd);
+        p.vx = (Math.random() - 0.5) * 0.5;
+        p.vy = (Math.random() - 0.5) * 0.5;
+        particles.current.push(p);
+      }
+    };
 
     const render = () => {
       const w = canvas.width;
       const h = canvas.height;
       if (w === 0 || h === 0) return;
 
-      ctx.fillStyle = "rgba(0,0,0,0.2)";
+      // 提高清除速率，Lite mode 下背景清理更果斷
+      ctx.globalCompositeOperation = "source-over";
+      ctx.fillStyle = isLowEnd ? "rgba(0,0,0,0.4)" : "rgba(0,0,0,0.2)";
       ctx.fillRect(0, 0, w, h);
 
       const { leftHand, rightHand, leftKnee, rightKnee } = poseData || {};
@@ -128,22 +142,21 @@ export default function Fireworks({ poseData, isLowEnd }) {
 
         particles.current.push(new Particle(x, y, color, "normal", isLowEnd));
 
-        //✌️ YA 閃爍星辰射線
         if (gesture === "Victory") {
-            for (let i = 0; i < 3; i++) {
-            const color = i % 2 === 0 ? "#FFF" : "#00FFFF";
-            const p = new Particle(x, y, color, "ray", isLowEnd);
+          for (let i = 0; i < (isLowEnd ? 1 : 3); i++) {
+            const rayColor = i % 2 === 0 ? "#FFF" : "#00FFFF";
+            const p = new Particle(x, y, rayColor, "ray", isLowEnd);
             const randAngle = Math.random() * Math.PI * 2;
             const speed = 10;
             p.vx = Math.cos(randAngle) * speed;
             p.vy = Math.sin(randAngle) * speed;
             particles.current.push(p);
           }
-        } 
+        }
 
         if (gesture === "Open_Palm") {
           if (!status.current[side + "Open"]) {
-            for (let i = 0; i < (isLowEnd ? 20 : 40); i++) {
+            for (let i = 0; i < (isLowEnd ? 15 : 40); i++) {
               particles.current.push(new Particle(x, y, color, "explosion", isLowEnd));
             }
             status.current[side + "Open"] = true;
@@ -153,13 +166,12 @@ export default function Fireworks({ poseData, isLowEnd }) {
         }
       });
 
+      // 雙手接觸邏輯
       if (leftHand?.visibility > 0.6 && rightHand?.visibility > 0.6) {
         const lx = (1 - leftHand.x) * w, ly = leftHand.y * h;
         const rx = (1 - rightHand.x) * w, ry = rightHand.y * h;
-        const dx = rx - lx;
-        const dy = ry - ly;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        
+        const dist = Math.sqrt(Math.pow(rx - lx, 2) + Math.pow(ry - ly, 2));
+
         if (dist < 80 && !status.current.handsTouching) {
           createSmallHeart((lx + rx) / 2, (ly + ry) / 2);
           status.current.handsTouching = true;
@@ -168,6 +180,7 @@ export default function Fireworks({ poseData, isLowEnd }) {
         }
       }
 
+      // 膝蓋邏輯
       [leftKnee, rightKnee].forEach((knee, i) => {
         if (knee?.visibility > 0.5) {
           const kx = (1 - knee.x) * w;
@@ -176,16 +189,21 @@ export default function Fireworks({ poseData, isLowEnd }) {
         }
       });
 
-      const maxP = isLowEnd ? 200 : 400;
+      const maxP = isLowEnd ? 150 : 400;
       if (particles.current.length > maxP) {
         particles.current.splice(0, particles.current.length - maxP);
       }
 
+      // 渲染粒子
       for (let i = particles.current.length - 1; i >= 0; i--) {
         const p = particles.current[i];
         p.update();
-        if (p.alpha <= 0) particles.current.splice(i, 1);
-        else p.draw(ctx);
+        // 消失門檻從 0 提高到 0.1
+        if (p.alpha <= 0.1) {
+          particles.current.splice(i, 1);
+        } else {
+          p.draw(ctx);
+        }
       }
       raf = requestAnimationFrame(render);
     };
@@ -205,5 +223,17 @@ export default function Fireworks({ poseData, isLowEnd }) {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  return <canvas ref={canvasRef} style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 100 }} />;
+  return (
+    <canvas
+      ref={canvasRef}
+      style={{
+        position: "fixed",
+        inset: 0,
+        pointerEvents: "none",
+        zIndex: 100,
+        transform: "translateZ(0)",
+        willChange: "transform"
+      }}
+    />
+  );
 }
