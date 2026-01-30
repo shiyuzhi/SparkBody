@@ -29,12 +29,20 @@ export default function PoseSkeleton({ onPoseUpdate, onGestureData, hideCanvas =
       const detectGesture = (handLandmarks) => {
         if (!handLandmarks) return "None";
         
-        // 0掌心, 8食指尖, 5食指根, 12中指尖, 9中指根
-        // 指尖與掌心的距離明顯大於指根與掌心的距離，則判定為張開 (Open_Palm)
-        const isIndexOpen = handLandmarks[8].y < handLandmarks[5].y - 0.03;
-        const isMiddleOpen = handLandmarks[12].y < handLandmarks[9].y - 0.03;
-        
-        return (isIndexOpen && isMiddleOpen) ? "Open_Palm" : "Closed_Fist";
+        // 檢查拇指、食指、中指、無名指是否伸直
+        const thumbUp = handLandmarks[4].y < handLandmarks[2].y - 0.04;
+        const indexUp = handLandmarks[8].y < handLandmarks[5].y - 0.04;
+        const middleUp = handLandmarks[12].y < handLandmarks[9].y - 0.04;
+        const ringUp = handLandmarks[16].y < handLandmarks[13].y - 0.04;
+
+        // 👍 讚只有拇指上
+        if (thumbUp && !indexUp && !middleUp) return "Thumb_Up";
+        // ✌️ YA食指中指上揚，無名指收合
+        if (indexUp && middleUp && !ringUp) return "Victory";
+        // 🖐️ 至少食、中、無名指都上揚
+        if (indexUp && middleUp && ringUp) return "Open_Palm";
+
+        return "Closed_Fist";
       };
 
       const leftG = detectGesture(results.leftHandLandmarks);

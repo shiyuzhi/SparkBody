@@ -9,7 +9,7 @@ class Particle {
     this.type = type;
     this.isLowEnd = isLowEnd;
     this.alpha = 1;
-    this.friction = 0.94; // 原本參數
+    this.friction = 0.94; 
   
     if (type === "heart") {
       this.decay = 0.05; 
@@ -87,7 +87,7 @@ export default function Fireworks({ poseData, isLowEnd }) {
     let raf;
 
     const createSmallHeart = (centerX, centerY) => {
-    const numPoints = 50; // 增加點的密度，解決碎裂感
+    const numPoints = 40; // 增加點的密度，解決碎裂感
     const scale = 5;
     const offsetY = centerY - 80; 
 
@@ -127,6 +127,19 @@ export default function Fireworks({ poseData, isLowEnd }) {
         const color = side === "left" ? "#FF69B4" : "#00FFFF";
 
         particles.current.push(new Particle(x, y, color, "normal", isLowEnd));
+
+        //✌️ YA 閃爍星辰射線
+        if (gesture === "Victory") {
+            for (let i = 0; i < 3; i++) {
+            const color = i % 2 === 0 ? "#FFF" : "#00FFFF";
+            const p = new Particle(x, y, color, "ray", isLowEnd);
+            const randAngle = Math.random() * Math.PI * 2;
+            const speed = 10;
+            p.vx = Math.cos(randAngle) * speed;
+            p.vy = Math.sin(randAngle) * speed;
+            particles.current.push(p);
+          }
+        } 
 
         if (gesture === "Open_Palm") {
           if (!status.current[side + "Open"]) {
