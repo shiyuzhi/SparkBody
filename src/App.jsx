@@ -14,7 +14,6 @@ export default function App() {
   const [videoId, setVideoId] = useState("4rgSzQwe5DQ");
   const [inputUrl, setInputUrl] = useState("https://youtu.be/4rgSzQwe5DQ");
   
-  // --- 歌單與類別狀態 ---
   const [midiList, setMidiList] = useState([]);
   const [categories, setCategories] = useState([]); 
   const [selectedCategory, setSelectedCategory] = useState(""); 
@@ -22,46 +21,49 @@ export default function App() {
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   const [windowHeight, setWindowHeight] = useState(window.innerHeight);
 
-  // 效能分級偵測
   const isLowEnd = useMemo(() => {
-  const isWeakCPU = navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2;
-  // 軟體環境 (這才是修復 iPad Chrome 的關鍵) ---
-  // CriOS = Chrome in iOS。
-  // 只要是 iOS 上的 Chrome，為了避開那個 Bug，強迫它跑 Lite mode。
-  const isIOSChrome = /CriOS/i.test(navigator.userAgent);
-  const isSmallScreen = windowWidth < 600;
-  return isWeakCPU || isIOSChrome || isSmallScreen;
-}, [windowWidth]);
+    const isWeakCPU = navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2;
+    const isIOSChrome = /CriOS/i.test(navigator.userAgent);
+    const isSmallScreen = windowWidth < 600;
+    return isWeakCPU || isIOSChrome || isSmallScreen;
+  }, [windowWidth]);
 
- useEffect(() => {
+  // 抓資料 
+  useEffect(() => {
     const handleResize = () => {
       setWindowWidth(window.innerWidth);
       setWindowHeight(window.innerHeight);
     };
     window.addEventListener("resize", handleResize);
-    
-    // 抓類別
+
     fetch('https://imuse.ncnu.edu.tw/Midi-library/api/categories')
       .then(res => res.json())
       .then(data => setCategories(Array.isArray(data) ? data : []))
       .catch(err => console.error("Category Error:", err));
 
-    // 抓MIDI 列表 移除 console.log)
     fetch('https://imuse.ncnu.edu.tw/Midi-library/api/midis')
       .then(res => res.json())
-      .then(data => { 
-        // 抓到陣列，不論資料是在 data 還是 data.items
-        setMidiList(data.items || data || []); 
+      .then(data => {
+        const list = data.items || data || [];
+        setMidiList(list);
+
+        // 處理網址參數 ?midi=歌名
+        const params = new URLSearchParams(window.location.search);
+        const midiParam = params.get("midi");
+        if (midiParam) {
+          const matchMidi = list.find(m => m.title === midiParam);
+          if (matchMidi && matchMidi.description) {
+            handleUrlChange(matchMidi.description);
+          }
+        }
       })
       .catch(err => console.error("MIDI Error:", err));
 
     return () => window.removeEventListener("resize", handleResize);
-  }, []);
+  }, []); 
 
-  // 比對
   const filteredMidiList = useMemo(() => {
     if (!selectedCategory) return midiList;
-
     return midiList.filter(midi => {
       const isInArray = Array.isArray(midi.categories) && midi.categories.includes(selectedCategory);
       const isMatchText = midi.categories_text === selectedCategory;
@@ -169,7 +171,6 @@ export default function App() {
 
         <div className="ms-auto d-flex align-items-center gap-1 gap-md-2" style={{ zIndex: 10, flexShrink: 0 }}>
           
-          {/* 類別選單 */}
           <select 
             className="form-select form-select-sm bg-dark text-info border-secondary shadow-none"
             style={{ width: isMobile ? "85px" : "110px", fontSize: "0.75rem" }}
@@ -182,7 +183,6 @@ export default function App() {
             ))}
           </select>
 
-          {/* 歌曲選單 (根據類別過濾) */}
           <select 
             className="form-select form-select-sm bg-dark text-warning border-secondary shadow-none"
             style={{ width: isMobile ? "95px" : "145px", fontSize: "0.75rem" }}
@@ -195,7 +195,7 @@ export default function App() {
             ))}
           </select>
 
-           {/* 補回手動輸入框 */}
+          {/* 手動輸入框 */}
           <input 
             type="text" 
             value={inputUrl} 
@@ -208,9 +208,6 @@ export default function App() {
           <button className="btn btn-sm btn-warning" onClick={() => setShowMusic(!showMusic)}>
               {isMobile ? "🎵" : "Music"}
           </button>
-
-         
-
         </div>
       </div>
 
