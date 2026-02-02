@@ -195,9 +195,22 @@ export default function App() {
             ))}
           </select>
 
+           {/* 補回手動輸入框 */}
+          <input 
+            type="text" 
+            value={inputUrl} 
+            onChange={handleUrlChange} 
+            className="form-control form-control-sm bg-dark text-info border-secondary d-none d-sm-block" 
+            style={{ width: "100px", fontSize: "0.75rem" }} 
+            placeholder="YT URL" 
+          />
+
           <button className="btn btn-sm btn-warning" onClick={() => setShowMusic(!showMusic)}>
               {isMobile ? "🎵" : "Music"}
           </button>
+
+         
+
         </div>
       </div>
 
