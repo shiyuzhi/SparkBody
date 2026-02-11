@@ -21,12 +21,13 @@ export default function App() {
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   const [windowHeight, setWindowHeight] = useState(window.innerHeight);
 
-  const isLowEnd = useMemo(() => {
+  const [isLowEnd, setIsLowEnd] = useState(() => {
+    // 初始載入時自動判定一次
     const isWeakCPU = navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2;
     const isIOSChrome = /CriOS/i.test(navigator.userAgent);
-    const isSmallScreen = windowWidth < 600;
+    const isSmallScreen = window.innerWidth < 600;
     return isWeakCPU || isIOSChrome || isSmallScreen;
-  }, [windowWidth]);
+  });
 
   // 抓資料 
   useEffect(() => {
@@ -157,9 +158,16 @@ export default function App() {
                    onChange={(e) => setSkeletonScale(parseFloat(e.target.value))} 
                    style={{ width: "60px" }} />
           )}
-          <span className={`badge ${isLowEnd ? 'bg-secondary' : 'bg-success'} d-none d-md-inline`}>
-            {isLowEnd ? "Lite Mode" : "High Performance"}
-          </span>
+          
+          {/* 把原本的 badge 改成可以點擊的按鈕，手動切換效能模式 */}
+          <button 
+            className={`btn btn-sm ${isLowEnd ? 'btn-secondary' : 'btn-success'} d-none d-md-inline`}
+            onClick={() => setIsLowEnd(!isLowEnd)}
+            style={{ fontSize: "0.7rem", fontWeight: "bold" }}
+          >
+            {isLowEnd ? "🚀 Lite Mode (ON)" : "💎 High Performance"}
+          </button>
+
         </div>
 
         <div className="position-absolute start-50 translate-middle-x text-center" 
