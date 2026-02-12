@@ -10,7 +10,7 @@ export default function Recognizer({ onGestureData, isLowEnd = false }) {
   const frameCount = useRef(0);
   const isLowEndRef = useRef(isLowEnd);
   
-  // 【新增：穩定器】紀錄上一次成功的數據，用來緩衝消失的瞬間
+  // 紀錄上一次成功的數據，用來緩衝消失的瞬間
   const lastValidData = useRef([]);
   const emptyFrameCount = useRef(0);
 

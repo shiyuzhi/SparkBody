@@ -36,12 +36,20 @@ export default function PoseSkeleton({ onPoseUpdate, onGestureData, hideCanvas =
     });
     holisticRef.current = holistic;
 
-    // 將繪圖邏輯獨立出來
-    // 【橋接手腕與手掌，解決斷裂感】
+    // 在元件外部或 useEffect 前定義要排除的索引
+    // 13-15 (左前臂), 14-16 (右前臂), 以及手掌相關點
+    const EXCLUDED_INDICES = [9,10,13, 14, 15, 16, 17, 18, 19, 20, 21, 22];
+
     const draw = (results) => {
       const canvas = canvasRef.current;
       const ctx = canvas?.getContext("2d");
       if (hideCanvas || !ctx || !results) return;
+
+      // 確保畫布尺寸同步（防止變形導致的線條偏離）
+      if (canvas.width !== window.innerWidth || canvas.height !== window.innerHeight) {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+      }
 
       ctx.save();
       ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -49,47 +57,72 @@ export default function PoseSkeleton({ onPoseUpdate, onGestureData, hideCanvas =
       ctx.scale(-1, 1);
 
       const lineW = isLowEndRef.current ? 3 : 6;
-      const colorPose = "#e6ffdf"; // 身體顏色 (淡綠)
-      const colorHand = "#ffffff"; // 手部顏色 (純白)
+      const colorPose = "#e6ffdf"; // 身體顏色
+      const colorHand = "#ffffff"; // 手部顏色
 
-      // 先畫身體骨架
+      // --- 1. 畫身體骨架 (過濾掉前臂與手掌) ---
       if (results.poseLandmarks) {
-        const palmIndices = [9, 10, 17, 18, 19, 20, 21, 22];
-        const poseNoPalm = POSE_CONNECTIONS.filter(([a, b]) => !palmIndices.includes(a) && !palmIndices.includes(b));
-        drawConnectors(ctx, results.poseLandmarks, poseNoPalm, { color: colorPose, lineWidth: lineW });
+        // 關鍵：只保留「不包含前臂端點」的連線
+        const poseSafeConnections = POSE_CONNECTIONS.filter(([a, b]) => 
+          !EXCLUDED_INDICES.includes(a) || !EXCLUDED_INDICES.includes(b)
+        );
+
+        drawConnectors(ctx, results.poseLandmarks, poseSafeConnections, { 
+          color: colorPose, 
+          lineWidth: lineW 
+        });
         
         if (!isLowEndRef.current && results.poseLandmarks[0]) {
           drawSmile(ctx, results.poseLandmarks, canvas.width, canvas.height);
         }
       }
 
-      // ⚡【新增邏輯：強制畫出銜接線】
-      // 目的：把 Pose 模型的手腕 (15, 16) 跟 Hand 模型的手掌起點 (0) 連起來
-      const bridgeWrist = (poseIdx, handLandmarks) => {
-        if (results.poseLandmarks?.[poseIdx] && handLandmarks?.[0]) {
-          const pWrist = results.poseLandmarks[poseIdx]; // 身體模型的手腕
-          const hPalm = handLandmarks[0];               // 手部模型的手掌根
-          
-          ctx.beginPath();
-          ctx.moveTo(pWrist.x * canvas.width, pWrist.y * canvas.height);
-          ctx.lineTo(hPalm.x * canvas.width, hPalm.y * canvas.height);
-          ctx.strokeStyle = colorPose; // 使用身體色作為連接色
-          ctx.lineWidth = lineW;
-          ctx.lineCap = "round";
-          ctx.stroke();
-        }
-      };
+      // --- 2. 橋接邏輯函數 (單一控制權) ---
+      const drawBridgeForearm = (elbowIdx, wristIdx, handLandmarks) => {
+      const elbow = results.poseLandmarks?.[elbowIdx];
+      const poseWrist = results.poseLandmarks?.[wristIdx];
+      if (!elbow) return;
 
-      // 畫左手橋接
+      ctx.beginPath();
+      ctx.lineWidth = lineW;
+      ctx.strokeStyle = colorPose;
+      ctx.lineCap = "round";
+      ctx.moveTo(elbow.x * canvas.width, elbow.y * canvas.height);
+
+      if (handLandmarks?.[0]) {
+        // A：偵測到手掌，直接連到手心
+        ctx.lineTo(handLandmarks[0].x * canvas.width, handLandmarks[0].y * canvas.height);
+        ctx.stroke();
+      } else if (poseWrist && poseWrist.visibility > 0.5) {
+        //  B：手掌消失，連到 Pose 模型的手腕點
+        ctx.lineTo(poseWrist.x * canvas.width, poseWrist.y * canvas.height);
+        ctx.stroke();
+
+        // 在手腕處畫一個圓點，讓「手掌不見」時看起來像個關節點，而不是斷肢
+        ctx.beginPath();
+        ctx.arc(poseWrist.x * canvas.width, poseWrist.y * canvas.height, lineW * 0.8, 0, Math.PI * 2);
+        ctx.fillStyle = colorPose;
+        ctx.fill();
+      } else {
+        ctx.stroke(); // 只有手肘的情況
+      }
+    };
+      // --- 3. 畫左手與橋接 ---
+      drawBridgeForearm(13, 15, results.leftHandLandmarks);
       if (results.leftHandLandmarks) {
-        bridgeWrist(15, results.leftHandLandmarks); // 連接左手腕
-        drawConnectors(ctx, results.leftHandLandmarks, HAND_CONNECTIONS, { color: colorHand, lineWidth: lineW - 1 });
+        drawConnectors(ctx, results.leftHandLandmarks, HAND_CONNECTIONS, { 
+          color: colorHand, 
+          lineWidth: lineW - 1 
+        });
       }
 
-      // 右手橋接
+      // --- 4. 畫右手與橋接 ---
+      drawBridgeForearm(14, 16, results.rightHandLandmarks);
       if (results.rightHandLandmarks) {
-        bridgeWrist(16, results.rightHandLandmarks); // 連接右手腕
-        drawConnectors(ctx, results.rightHandLandmarks, HAND_CONNECTIONS, { color: colorHand, lineWidth: lineW - 1 });
+        drawConnectors(ctx, results.rightHandLandmarks, HAND_CONNECTIONS, { 
+          color: colorHand, 
+          lineWidth: lineW - 1 
+        });
       }
 
       ctx.restore();
@@ -97,7 +130,7 @@ export default function PoseSkeleton({ onPoseUpdate, onGestureData, hideCanvas =
     holistic.onResults((results) => {
       if (!isMounted) return;
       
-      // ⚡【註解：更新緩衝】只要 AI 有產出，就存進緩衝區
+      // 【更新緩衝】只要 AI 有產出，就存進緩衝區
       lastResultsRef.current = results;
 
       // --- 手勢辨識與資料回傳邏輯 ---
@@ -162,7 +195,6 @@ export default function PoseSkeleton({ onPoseUpdate, onGestureData, hideCanvas =
           if (frameCount.current % skipThreshold === 0) {
             await holistic.send({ image: videoRef.current });
           } else {
-            // ⚡【註解：補幀渲染】
             // 在被跳過的幀，手動調用 draw() 並傳入 lastResultsRef。
             // 這能讓 Canvas 維持在 60fps 重繪，消除低耗電模式下的「閃爍」與「分離感」。
             if (lastResultsRef.current) {
