@@ -1,9 +1,13 @@
+//App.jsx
+//App.jsx
 import React, { useState, useEffect, useMemo } from "react";
 import "bootstrap/dist/css/bootstrap.min.css";
 import DraggableSkeleton from "./DraggableSkeleton";
 import DraggableYouTube from "./DraggableyouTube";
 import PoseSkeleton from "./PoseSkeleton";
 import Fireworks from "./Fireworks";
+// 1. 引入音訊控制實例
+import { drumKit } from "./Audio"; 
 
 export default function App() {
   const [showSkeleton, setShowSkeleton] = useState(true);
@@ -22,21 +26,33 @@ export default function App() {
   const [windowHeight, setWindowHeight] = useState(window.innerHeight);
 
   const [isLowEnd, setIsLowEnd] = useState(() => {
-    // 初始載入時自動判定一次
     const isWeakCPU = navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2;
     const isIOSChrome = /CriOS/i.test(navigator.userAgent);
     const isSmallScreen = window.innerWidth < 600;
     return isWeakCPU || isIOSChrome || isSmallScreen;
   });
 
-  // 抓資料 
+  // 2. 初始化與音訊解鎖監聽
   useEffect(() => {
+    /**
+     * 瀏覽器安全政策規定音訊必須由「使用者互動」開啟。
+     * 這裡監聽第一次點擊畫面來解鎖 AudioContext。
+     */
+    const handleUnlockAudio = () => {
+      drumKit.init(); 
+      console.log("🔊 Audio System Initialized");
+      // 解鎖後移除監聽，避免重複執行
+      window.removeEventListener("click", handleUnlockAudio);
+    };
+    window.addEventListener("click", handleUnlockAudio);
+
     const handleResize = () => {
       setWindowWidth(window.innerWidth);
       setWindowHeight(window.innerHeight);
     };
     window.addEventListener("resize", handleResize);
 
+    // 抓取 API 分類與清單
     fetch('https://imuse.ncnu.edu.tw/Midi-library/api/categories')
       .then(res => res.json())
       .then(data => setCategories(Array.isArray(data) ? data : []))
@@ -48,7 +64,6 @@ export default function App() {
         const list = data.items || data || [];
         setMidiList(list);
 
-        // 處理網址參數 ?midi=歌名
         const params = new URLSearchParams(window.location.search);
         const midiParam = params.get("midi");
         if (midiParam) {
@@ -60,7 +75,10 @@ export default function App() {
       })
       .catch(err => console.error("MIDI Error:", err));
 
-    return () => window.removeEventListener("resize", handleResize);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      window.removeEventListener("click", handleUnlockAudio);
+    };
   }, []); 
 
   const filteredMidiList = useMemo(() => {
@@ -93,6 +111,8 @@ export default function App() {
     if (match && match[2].length === 11) {
       setVideoId(match[2]);
       setShowMusic(true);
+      // 切換歌曲時也嘗試喚醒音訊
+      drumKit.init(); 
     }
   };
 
@@ -121,6 +141,7 @@ export default function App() {
         </div>
       </div>
 
+      {/* 煙火組件：內部會呼叫 drumKit.play */}
       <Fireworks poseData={integratedPoseData} isLowEnd={isLowEnd} />
 
       <DraggableSkeleton
@@ -149,7 +170,10 @@ export default function App() {
            }}>
         
         <div className="d-flex align-items-center gap-2" style={{ zIndex: 10, flexShrink: 0 }}>
-          <button className="btn btn-sm btn-info" onClick={() => setShowSkeleton(!showSkeleton)}>
+          <button className="btn btn-sm btn-info" onClick={() => {
+              setShowSkeleton(!showSkeleton);
+              drumKit.init(); // 點擊時啟動音訊
+            }}>
             <span className="d-none d-lg-inline">{showSkeleton ? "Hide Skeleton" : "Show Skeleton"}</span>
             <span className="d-lg-none">💀</span>
           </button>
@@ -159,7 +183,6 @@ export default function App() {
                    style={{ width: "60px" }} />
           )}
           
-          {/* 把原本的 badge 改成可以點擊的按鈕，手動切換效能模式 */}
           <button 
             className={`btn btn-sm ${isLowEnd ? 'btn-secondary' : 'btn-success'} d-none d-md-inline`}
             onClick={() => setIsLowEnd(!isLowEnd)}
@@ -203,7 +226,6 @@ export default function App() {
             ))}
           </select>
 
-          {/* 手動輸入框 */}
           <input 
             type="text" 
             value={inputUrl} 
@@ -213,7 +235,10 @@ export default function App() {
             placeholder="YT URL" 
           />
 
-          <button className="btn btn-sm btn-warning" onClick={() => setShowMusic(!showMusic)}>
+          <button className="btn btn-sm btn-warning" onClick={() => {
+              setShowMusic(!showMusic);
+              drumKit.init(); // 點擊時啟動音訊
+            }}>
               {isMobile ? "🎵" : "Music"}
           </button>
         </div>
