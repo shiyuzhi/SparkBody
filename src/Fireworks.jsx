@@ -95,8 +95,12 @@ class Particle {
 export default function Fireworks({ poseData, isLowEnd }) {
   const canvasRef = useRef(null);
   const particles = useRef([]); // 存儲所有活動粒子
-  // 用於記錄手勢狀態，防止音效與粒子重複觸發
-  const status = useRef({ leftOpen: false, rightOpen: false, handsTouching: false });
+  // 記錄 Ready 狀態實現蓄力功能
+  const status = useRef({ 
+    leftReady: false, rightReady: false, 
+    leftOpen: false, rightOpen: false, 
+    handsTouching: false 
+  });
 
   // 1. 組件掛載時：預載入音效檔案
   useEffect(() => {
@@ -193,20 +197,30 @@ export default function Fireworks({ poseData, isLowEnd }) {
           }
         }
 
-        // 張開手掌 (Open_Palm)：觸發大爆炸
-        if (gesture === "Open_Palm") {
-          // 狀態鎖定：確保張開一次只響一聲，直到關閉再張開
-          if (!status.current[side + "Open"]) {
-            // 音效觸發：標準煙火重低音爆炸
-            drumKit.play('boom', { volume: 0.6, detune: 0, pan });
-
-            for (let i = 0; i < (isLowEnd ? 15 : 40); i++) {
-              particles.current.push(new Particle(x, y, color, "explosion", isLowEnd));
+       // --- 核心蓄力邏輯 (計數器版) ---
+      if (gesture === "Closed_Fist") {
+        // 握拳中：增加計數
+        status.current[side + "Count"]++;
+        
+        // 連續偵測到 20幀握拳，才算真正 Ready 0.3秒以上
+        if (status.current[side + "Count"] > 20) {
+          status.current[side + "Ready"] = true;
+        }
+      } else {
+        // 只要不是握拳：計數歸零 (關鍵！防跳動)
+        status.current[side + "Count"] = 0;
+          if (gesture === "Open_Palm") {
+            if (status.current[side + "Ready"]) {
+              drumKit.play('boom', { volume: 0.6, detune: 0, pan });
+              for (let i = 0; i < (isLowEnd ? 15 : 40); i++) {
+                particles.current.push(new Particle(x, y, color, "explosion", isLowEnd));
+              }
+              status.current[side + "Ready"] = false; // 消耗掉蓄力
             }
-            status.current[side + "Open"] = true;
+          } else {
+            // 如果手勢既不是握拳也不是張開 (如翻轉中的 None)，直接取消 Ready
+            status.current[side + "Ready"] = false;
           }
-        } else {
-          status.current[side + "Open"] = false;
         }
       });
 
@@ -226,8 +240,11 @@ export default function Fireworks({ poseData, isLowEnd }) {
 
       // 膝蓋座標：產生追蹤火花
       [leftKnee, rightKnee].forEach((knee, i) => {
-        if (knee?.visibility > 0.5) {
-          particles.current.push(new Particle((1 - knee.x) * w, knee.y * h, i === 0 ? "#00ff66" : "#FFA500", "normal", isLowEnd));
+        if (leftKnee && leftKnee.visibility > 0.3) {
+          particles.current.push(new Particle((1 - leftKnee.x) * w, leftKnee.y * h, "#00FF00", "normal", isLowEnd));
+        }
+        if (rightKnee && rightKnee.visibility > 0.3) {
+          particles.current.push(new Particle((1 - rightKnee.x) * w, rightKnee.y * h, "#FF8C00", "normal", isLowEnd));
         }
       });
 
