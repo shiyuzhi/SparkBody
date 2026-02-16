@@ -202,8 +202,8 @@ export default function Fireworks({ poseData, isLowEnd }) {
         // 握拳中：增加計數
         status.current[side + "Count"]++;
         
-        // 連續偵測到 20幀握拳，才算真正 Ready 0.3秒以上
-        if (status.current[side + "Count"] > 20) {
+        // 連續偵測到 15幀握拳，才算真正 Ready 0.25秒以上
+        if (status.current[side + "Count"] > 15) {
           status.current[side + "Ready"] = true;
         }
       } else {
