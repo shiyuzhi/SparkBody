@@ -166,13 +166,19 @@ export default function Fireworks({ poseData, isLowEnd }) {
         const pos = poseData?.[key];
         if (!pos || pos.visibility <= 0.6) return;
 
-        // 將 MediaPipe 歸一化座標 (0-1) 轉為 Canvas 物理座標
-        // 註：MediaPipe 的 X 是鏡像的，所以用 (1 - pos.x)
         const x = (1 - pos.x) * w;
         const y = pos.y * h;
         const side = key === "leftHand" ? "left" : "right";
         const gesture = poseData?.[side + "HandGesture"];
-        const color = side === "left" ? "#FF69B4" : "#00FFFF";
+        
+        // 如果還沒定義過這個手的顏色，或者剛好想換顏色
+        if (!status.current[side + "Color"]) {
+          const hue = Math.floor(Math.random() * 360);
+          status.current[side + "Color"] = `hsl(${hue}, 100%, 60%)`;
+        }
+        
+        // 使用隨機生成的顏色
+        const color = status.current[side + "Color"];
         
         // 2. 音訊方位：-1 (全左) 到 1 (全右)
         const pan = (x / w) * 2 - 1;
@@ -211,6 +217,9 @@ export default function Fireworks({ poseData, isLowEnd }) {
         status.current[side + "Count"] = 0;
           if (gesture === "Open_Palm") {
             if (status.current[side + "Ready"]) {
+              const newHue = Math.floor(Math.random() * 360);
+              status.current[side + "Color"] = `hsl(${newHue}, 100%, 60%)`;
+              const explosionColor = status.current[side + "Color"]; // 取得剛換好的顏色
               drumKit.play('boom', { volume: 0.6, detune: 0, pan });
               for (let i = 0; i < (isLowEnd ? 15 : 40); i++) {
                 particles.current.push(new Particle(x, y, color, "explosion", isLowEnd));
