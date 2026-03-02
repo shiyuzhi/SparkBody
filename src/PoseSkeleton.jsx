@@ -3,6 +3,7 @@ import React, { useRef, useEffect } from "react";
 import { Holistic, POSE_CONNECTIONS, HAND_CONNECTIONS } from "@mediapipe/holistic";
 import { Camera } from "@mediapipe/camera_utils";
 import { drawConnectors } from "@mediapipe/drawing_utils";
+import { logLMAData } from './AffectiveLogger';
 
 export default function PoseSkeleton({ onPoseUpdate, onGestureData, hideCanvas = false, isLowEnd = false }) {
   const videoRef = useRef(null);
@@ -158,7 +159,7 @@ export default function PoseSkeleton({ onPoseUpdate, onGestureData, hideCanvas =
         }
         return "None";
       };
-            const leftG = detectGesture(results.leftHandLandmarks);
+      const leftG = detectGesture(results.leftHandLandmarks);
       const rightG = detectGesture(results.rightHandLandmarks);
 
       if (onGestureData) onGestureData([[{ categoryName: leftG }], [{ categoryName: rightG }]]);
@@ -168,6 +169,12 @@ export default function PoseSkeleton({ onPoseUpdate, onGestureData, hideCanvas =
           head: flip(results.poseLandmarks?.[0]),
           leftHand: flip(results.leftHandLandmarks?.[8] || results.poseLandmarks?.[15]),
           rightHand: flip(results.rightHandLandmarks?.[8] || results.poseLandmarks?.[16]),
+
+          leftElbow: flip(results.poseLandmarks?.[13]),
+          rightElbow: flip(results.poseLandmarks?.[14]),
+          leftShoulder: flip(results.poseLandmarks?.[11]),
+          rightShoulder: flip(results.poseLandmarks?.[12]),
+          
           leftKnee: flip(results.poseLandmarks?.[25]),
           rightKnee: flip(results.poseLandmarks?.[26]),
           leftHandGesture: leftG,

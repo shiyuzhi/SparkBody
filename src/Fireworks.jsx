@@ -1,7 +1,7 @@
 // Fireworks.jsx
 import React, { useRef, useEffect } from "react";
-// 引入音訊控制實例（Singleton 模式）
-import { drumKit } from "./Audio"; 
+import { drumKit } from "./Audio";
+
 class Particle {
   constructor(x, y, color, type = "normal", isLowEnd = false) {
     this.x = x;
@@ -10,18 +10,12 @@ class Particle {
     this.type = type;
     this.isLowEnd = isLowEnd;
     this.alpha = 1;
-    this.friction = 0.94; // 摩擦力，讓粒子逐漸減速
+    this.friction = 0.94;
 
-    // 根據不同類型設定消失速度
-    if (type === "heart") {
-      this.decay = 0.06;
-    } else if (type === "explosion") {
-      this.decay = 0.09;
-    } else {
-      this.decay = 0.04;
-    }
+    if (type === "heart")          this.decay = 0.06;
+    else if (type === "explosion") this.decay = 0.09;
+    else                           this.decay = 0.04;
 
-    // 初始化粒子的速度與大小
     if (type === "explosion") {
       const angle = Math.random() * Math.PI * 2;
       const speed = Math.random() * 8 + 4;
@@ -39,27 +33,22 @@ class Particle {
     }
   }
 
-  // 更新粒子物理狀態
   update() {
     this.vx *= this.friction;
     this.vy *= this.friction;
-    if (this.type === "explosion") this.vy += 0.15; // 爆炸粒子有重力下墜
-    if (this.type === "heart") this.vy -= 0.05;     // 愛心粒子輕微上升
+    if (this.type === "explosion") this.vy += 0.15;
+    if (this.type === "heart")     this.vy -= 0.05;
     this.x += this.vx;
     this.y += this.vy;
     this.alpha -= this.decay;
   }
 
-  // 在 Canvas 上繪製粒子
   draw(ctx) {
-    if (this.alpha <= 0.1) return;
-
+    if (this.alpha <= 0.05) return;
     if (this.isLowEnd) {
-      // 效能模式：使用簡單的繪圖方式
       ctx.globalAlpha = this.alpha;
       ctx.globalCompositeOperation = "source-over";
       ctx.fillStyle = this.color;
-      
       if (this.type === "explosion" || this.type === "ray") {
         ctx.beginPath();
         ctx.moveTo(this.x - this.size, this.y);
@@ -75,11 +64,10 @@ class Particle {
         ctx.fill();
       }
     } else {
-      // 高效能模式：增加發光與光暈效果
       ctx.save();
       ctx.globalAlpha = this.alpha;
       ctx.fillStyle = this.color;
-      ctx.globalCompositeOperation = "lighter"; // 顏色疊加變亮
+      ctx.globalCompositeOperation = "lighter";
       if (this.type === "heart" || this.type === "explosion") {
         ctx.shadowBlur = 10;
         ctx.shadowColor = this.color;
@@ -92,23 +80,72 @@ class Particle {
   }
 }
 
+function createBirdTemplate() {
+  const t = [];
+
+  for (let i = 0; i < 120; i++) {
+    const r = Math.random();
+    const halfW = Math.sin(r * Math.PI) * 18;
+    t.push({ baseX: (r - 0.4) * 85, baseY: (Math.random() - 0.5) * halfW, color: r < 0.6 ? "#FFFFFF" : "#D0D0D0" });
+  }
+  for (let i = 0; i < 30; i++) {
+    const x = 45 + Math.random() * 20;
+    t.push({ baseX: x, baseY: (Math.random() - 0.5) * (65 - x) * 1.2, color: "#999999" });
+  }
+  for (let i = 0; i < 50; i++) {
+    const rad = Math.random() * Math.PI * 2;
+    const dist = Math.random();
+    t.push({ baseX: -42 + Math.cos(rad) * 13 * dist, baseY: -11 + Math.sin(rad) * 13 * dist, color: "#FFFFFF" });
+  }
+  for (let i = 0; i < 15; i++) {
+    t.push({ baseX: -55 - Math.random() * 18, baseY: -11 + (Math.random() - 0.5) * 3, color: "#FFCC00" });
+  }
+  for (let i = 0; i < 120; i++) {
+    const distX = Math.random() * 130;
+    const tt = distX / 130;
+    t.push({ baseX: -12 - distX, baseY: Math.sin(tt * Math.PI * 1.1) * -28, color: tt > 0.75 ? "#333333" : "#B0B0B0" });
+  }
+  for (let i = 0; i < 120; i++) {
+    const distX = Math.random() * 130;
+    const tt = distX / 130;
+    t.push({ baseX: 12 + distX, baseY: Math.sin(tt * Math.PI * 1.1) * -28, color: tt > 0.75 ? "#333333" : "#B0B0B0" });
+  }
+
+  return t;
+}
+
 export default function Fireworks({ poseData, isLowEnd }) {
-  const canvasRef = useRef(null);
-  const particles = useRef([]); // 存儲所有活動粒子
-  // 記錄 Ready 狀態實現蓄力功能
-  const status = useRef({ 
-    leftReady: false, rightReady: false, 
-    leftOpen: false, rightOpen: false, 
-    handsTouching: false 
+  const canvasRef  = useRef(null);
+  const particles  = useRef([]);
+  const latestPose = useRef(poseData);
+
+  useEffect(() => { latestPose.current = poseData; }, [poseData]);
+
+  const status = useRef({
+    leftReady: false, rightReady: false,
+    leftOpen: false,  rightOpen: false,
+    handsTouching: false,
   });
 
-  // 1. 組件掛載時：預載入音效檔案
+  const birdStatus = useRef({
+    historyReady: false,
+    historyCount: 0,
+    lastTriggerTime: 0,
+    // 三幀歷史
+    history: [
+      { y: 0, t: 0 },
+      { y: 0, t: 0 },
+    ],
+    // 「位移防護」：記錄最近 10 幀的 avgY，用來算真實移動距離
+    recentY: [],
+  });
+
+  const birdTemplate = useRef(createBirdTemplate());
+
   useEffect(() => {
-    // 1. 自動獲取 Vite 設定的 Base URL (在此案例中會是 "/SparkBody/")
-    const baseUrl = import.meta.env.BASE_URL; 
-    const soundPath = `${baseUrl}/sounds/FWSnare.wav`.replace(/\/+/g, '/');
-    console.log("🔗 最終載入路徑:", soundPath); // 這行會印出 /SparkBody/sounds/FWSnare.wav
-    drumKit.loadBuffer('boom', soundPath);
+    const baseUrl   = import.meta.env.BASE_URL;
+    const soundPath = `${baseUrl}/sounds/FWSnare.wav`.replace(/\/+/g, "/");
+    drumKit.loadBuffer("boom", soundPath);
   }, []);
 
   useEffect(() => {
@@ -117,21 +154,19 @@ export default function Fireworks({ poseData, isLowEnd }) {
     const ctx = canvas.getContext("2d", { alpha: true });
     let raf;
 
-    /**
-     * 輔助函式：建立愛心爆炸效果並播放音效
-     */
     const createSmallHeart = (centerX, centerY) => {
-      // 音效觸發：雙手合心播放「清脆高音」
-      const pan = (centerX / canvas.width) * 2 - 1; // 計算水平方位
-      drumKit.play('boom', { volume: 0.3, detune: 600, pan });
-
+      const pan = (centerX / canvas.width) * 2 - 1;
+      drumKit.play("boom", { volume: 0.3, detune: 600, pan });
       const numPoints = isLowEnd ? 20 : 40;
-      const scale = 5;
-      const offsetY = centerY - 80;
+      const scale     = 5;
+      const offsetY   = centerY - 80;
       for (let i = 0; i < numPoints; i++) {
-        const t = (i / numPoints) * Math.PI * 2;
+        const t       = (i / numPoints) * Math.PI * 2;
         const xOffset = scale * (16 * Math.pow(Math.sin(t), 3));
-        const yOffset = -scale * (13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t));
+        const yOffset = -scale * (
+          13 * Math.cos(t) - 5 * Math.cos(2 * t) -
+          2 * Math.cos(3 * t) - Math.cos(4 * t)
+        );
         const color = i % 2 === 0 ? "#ff4d4d" : "#ff85a2";
         const p = new Particle(centerX + xOffset, offsetY + yOffset, color, "heart", isLowEnd);
         p.vx = (Math.random() - 0.5) * 0.5;
@@ -140,105 +175,137 @@ export default function Fireworks({ poseData, isLowEnd }) {
       }
     };
 
-    /**
-     * 主渲染循環
-     */
     const render = () => {
-      // 自動調整畫布解析度
       if (canvas.width !== canvas.clientWidth || canvas.height !== canvas.clientHeight) {
-        canvas.width = canvas.clientWidth;
+        canvas.width  = canvas.clientWidth;
         canvas.height = canvas.clientHeight;
       }
-
       const w = canvas.width;
       const h = canvas.height;
-      if (w === 0 || h === 0) return;
+      if (w === 0 || h === 0) { raf = requestAnimationFrame(render); return; }
 
-      // 繪製半透明背景產生殘影效果
       ctx.globalCompositeOperation = "source-over";
       ctx.fillStyle = isLowEnd ? "rgba(0,0,0,0.3)" : "rgba(0,0,0,0.15)";
       ctx.fillRect(0, 0, w, h);
 
-      const { leftHand, rightHand, leftKnee, rightKnee } = poseData || {};
+      const currentPose = latestPose.current;
+      const { leftHand, rightHand, leftKnee, rightKnee,
+              leftElbow, rightElbow, leftShoulder, rightShoulder } = currentPose || {};
+      
+      // ==========================================
+      // 🦅 藝術流·海鷗（體感優化釋放版）
+      // ==========================================
+      const MIN_WINGSPAN  = 0.30;    // 🚀 再放寬，只要手有離開身體就行
+      const FLAP_SPEED    = 0.012;   // 🚀 靈敏度大幅提升，優雅下壓即可觸發
+      const BIRD_COOLDOWN = 800;     
 
-      // 遍歷左右手座標
+      if (leftHand?.visibility > 0.7 && rightHand?.visibility > 0.7) {
+        const now = Date.now();
+        const bStatus = birdStatus.current;
+
+        const leftDY  = (bStatus.prevLY ?? leftHand.y) - leftHand.y;
+        const rightDY = (bStatus.prevRY ?? rightHand.y) - rightHand.y;
+        bStatus.prevLY = leftHand.y;
+        bStatus.prevRY = rightHand.y;
+
+        // 1. 寬度：縮短門檻
+        const wingspan = Math.abs(leftHand.x - rightHand.x);
+        
+        // 2. 簡化伸展度：只要手腕離肩膀有一點點距離 (0.1) 即可
+        const leftArmExt  = Math.abs(leftHand.x - (leftShoulder?.x || 0));
+        const rightArmExt = Math.abs(rightHand.x - (rightShoulder?.x || 0));
+        const isExtended  = leftArmExt > 0.4 && rightArmExt > 0.4;
+
+        const avgDY = (leftDY + rightDY) / 2;
+
+        // 🚀 核心判定：放寬所有限制，專注於「向下拍擊」的動作
+        if (wingspan > MIN_WINGSPAN && isExtended && avgDY < -FLAP_SPEED) {
+          if (now - bStatus.lastTriggerTime > BIRD_COOLDOWN) {
+            bStatus.lastTriggerTime = now;
+            
+            drumKit.play("boom", { volume: 0.5, detune: -200 });
+
+            const birdX = (1 - (leftHand.x + rightHand.x) / 2) * w;
+            const birdY = ((leftHand.y + rightHand.y) / 2) * h;
+            const tmpl  = birdTemplate.current;
+
+            for (let i = 0; i < tmpl.length; i += (isLowEnd ? 4 : 2)) {
+              const item = tmpl[i];
+              const p = new Particle(
+                birdX + item.baseX * 0.9, 
+                birdY + item.baseY * 0.9, 
+                item.color, "normal", isLowEnd
+              );
+              p.vx = (item.baseX * 0.005); 
+              p.vy = -0.8; // 稍微增加一點上升感，讓你看得到它在動
+              p.decay = 0.015;
+              p.friction = 0.995;
+              p.size = 1.6;
+              particles.current.push(p);
+            }
+          }
+        }
+      }
+      // 手部粒子 + 手勢偵測
+      // ==========================================
       ["leftHand", "rightHand"].forEach((key) => {
-        const pos = poseData?.[key];
+        const pos = currentPose?.[key];
         if (!pos || pos.visibility <= 0.6) return;
 
-        const x = (1 - pos.x) * w;
-        const y = pos.y * h;
-        const side = key === "leftHand" ? "left" : "right";
-        const gesture = poseData?.[side + "HandGesture"];
-        
-        // 如果還沒定義過這個手的顏色，或者剛好想換顏色
+        const x       = (1 - pos.x) * w;
+        const y       = pos.y * h;
+        const side    = key === "leftHand" ? "left" : "right";
+        const gesture = currentPose?.[side + "HandGesture"];
+
         if (!status.current[side + "Color"]) {
           const hue = Math.floor(Math.random() * 360);
           status.current[side + "Color"] = `hsl(${hue}, 100%, 60%)`;
         }
-        
-        // 使用隨機生成的顏色
-        const color = status.current[side + "Color"];
-        
-        // 2. 音訊方位：-1 (全左) 到 1 (全右)
-        const pan = (x / w) * 2 - 1;
 
-        // 一般移動時產生的微小火花
+        const color = status.current[side + "Color"];
+        const pan   = (x / w) * 2 - 1;
+
         particles.current.push(new Particle(x, y, color, "normal", isLowEnd));
 
-        // 勝利手勢 (Victory)：噴射射線
         if (gesture === "Victory") {
-          // 音效觸發：高頻能量感
-          if (Math.random() > 0.8) { // 限制頻率避免刺耳
-            drumKit.play('boom', { volume: 0.2, detune: 1000, pan });
-          }
+          if (Math.random() > 0.8) drumKit.play("boom", { volume: 0.2, detune: 1000, pan });
           for (let i = 0; i < (isLowEnd ? 1 : 3); i++) {
             const rayColor = i % 2 === 0 ? "#FFF" : "#00FFFF";
             const p = new Particle(x, y, rayColor, "ray", isLowEnd);
-            const randAngle = Math.random() * Math.PI * 2;
-            const speed = 10;
-            p.vx = Math.cos(randAngle) * speed;
-            p.vy = Math.sin(randAngle) * speed;
+            const a = Math.random() * Math.PI * 2;
+            p.vx = Math.cos(a) * 10;
+            p.vy = Math.sin(a) * 10;
             particles.current.push(p);
           }
         }
 
-       // --- 核心蓄力邏輯 (計數器版) ---
-      if (gesture === "Closed_Fist") {
-        // 握拳中：增加計數
-        status.current[side + "Count"]++;
-        
-        // 連續偵測到 15幀握拳，才算真正 Ready 0.25秒以上
-        if (status.current[side + "Count"] > 15) {
-          status.current[side + "Ready"] = true;
-        }
-      } else {
-        // 只要不是握拳：計數歸零 (關鍵！防跳動)
-        status.current[side + "Count"] = 0;
+        if (gesture === "Closed_Fist") {
+          status.current[side + "Count"] = (status.current[side + "Count"] || 0) + 1;
+          if (status.current[side + "Count"] > 15) status.current[side + "Ready"] = true;
+        } else {
+          status.current[side + "Count"] = 0;
           if (gesture === "Open_Palm") {
             if (status.current[side + "Ready"]) {
               const newHue = Math.floor(Math.random() * 360);
               status.current[side + "Color"] = `hsl(${newHue}, 100%, 60%)`;
-              const explosionColor = status.current[side + "Color"]; // 取得剛換好的顏色
-              drumKit.play('boom', { volume: 0.6, detune: 0, pan });
+              const explosionColor = status.current[side + "Color"];
+              drumKit.play("boom", { volume: 0.6, detune: 0, pan });
               for (let i = 0; i < (isLowEnd ? 15 : 40); i++) {
-                particles.current.push(new Particle(x, y, color, "explosion", isLowEnd));
+                particles.current.push(new Particle(x, y, explosionColor, "explosion", isLowEnd));
               }
-              status.current[side + "Ready"] = false; // 消耗掉蓄力
+              status.current[side + "Ready"] = false;
             }
           } else {
-            // 如果手勢既不是握拳也不是張開 (如翻轉中的 None)，直接取消 Ready
             status.current[side + "Ready"] = false;
           }
         }
       });
 
-      // 雙手接觸判定 (合心)
+      // 雙手碰 → 愛心
       if (leftHand?.visibility > 0.6 && rightHand?.visibility > 0.6) {
         const lx = (1 - leftHand.x) * w, ly = leftHand.y * h;
         const rx = (1 - rightHand.x) * w, ry = rightHand.y * h;
-        const dist = Math.sqrt(Math.pow(rx - lx, 2) + Math.pow(ry - ly, 2));
-        
+        const dist = Math.sqrt((rx - lx) ** 2 + (ry - ly) ** 2);
         if (dist < 80 && !status.current.handsTouching) {
           createSmallHeart((lx + rx) / 2, (ly + ry) / 2);
           status.current.handsTouching = true;
@@ -247,23 +314,20 @@ export default function Fireworks({ poseData, isLowEnd }) {
         }
       }
 
-      // 膝蓋座標：產生追蹤火花
+      // 膝蓋粒子
       [leftKnee, rightKnee].forEach((knee, i) => {
-        if (leftKnee && leftKnee.visibility > 0.3) {
-          particles.current.push(new Particle((1 - leftKnee.x) * w, leftKnee.y * h, "#00FF00", "normal", isLowEnd));
-        }
-        if (rightKnee && rightKnee.visibility > 0.3) {
-          particles.current.push(new Particle((1 - rightKnee.x) * w, rightKnee.y * h, "#FF8C00", "normal", isLowEnd));
+        if (knee?.visibility > 0.3) {
+          const kneeColor = i === 0 ? "#00FF00" : "#FF8C00";
+          particles.current.push(new Particle((1 - knee.x) * w, knee.y * h, kneeColor, "normal", isLowEnd));
         }
       });
 
-      // 粒子數量優化，避免過多導致卡頓
-      const maxP = isLowEnd ? 200 : 500;
+      // 粒子上限：鳥爆發 500 個 + 其他粒子，給足空間
+      const maxP = isLowEnd ? 400 : 1000;
       if (particles.current.length > maxP) {
         particles.current.splice(0, particles.current.length - maxP);
       }
 
-      // 更新並繪製所有粒子
       for (let i = particles.current.length - 1; i >= 0; i--) {
         const p = particles.current[i];
         p.update();
@@ -273,22 +337,25 @@ export default function Fireworks({ poseData, isLowEnd }) {
           p.draw(ctx);
         }
       }
+
       raf = requestAnimationFrame(render);
     };
 
     render();
-    return () => cancelAnimationFrame(raf); // 清理動畫幀，防止記憶體洩漏
-  }, [poseData, isLowEnd]);
+    return () => cancelAnimationFrame(raf);
+  }, [isLowEnd]);
 
   return (
     <canvas
       ref={canvasRef}
       style={{
-        position: "absolute", top: 0, left: 0, width: "100%", height: "100%",
-        pointerEvents: "none", // 讓鼠標事件穿透
-        zIndex: 10, 
-        mixBlendMode: "screen", // 螢幕濾色：讓黑色背景透明，顏色更亮
-        filter: "contrast(1.2) brightness(1.1)", // 增加色彩飽和度
+        position: "absolute",
+        top: 0, left: 0,
+        width: "100%", height: "100%",
+        pointerEvents: "none",
+        zIndex: 10,
+        mixBlendMode: "screen",
+        filter: "contrast(1.2) brightness(1.1)",
       }}
     />
   );
