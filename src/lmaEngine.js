@@ -1,21 +1,4 @@
 // src/lmaEngine.js
-// ─────────────────────────────────────────────────────────────────────────────
-// LMA Feature Extraction Engine — SparkBody v2
-//
-// 吃你現有 PoseSkeleton.jsx onPoseUpdate 回傳的格式：
-//   { leftHand, rightHand, leftShoulder, rightShoulder, ... }
-//   每個欄位：{ x, y, visibility }  (MediaPipe normalised 0-1)
-//
-// 論文數學定義（可直接貼進 System 章節）：
-//   Shape  (S)  = dist(LH, RH) / dist(LS, RS)          ∈ [0, ~3]
-//   Weight (W)  = |ΔyLH + ΔyRH| / 2  per frame         (normalised units/frame)
-//   Flow   (F)  = 1 − clamp(jerk / MAX_JERK, 0, 1)     ∈ [0, 1]
-//   KT          = 0.40·Ŵ + 0.35·(1−F̂) + 0.25·Ŝ        ∈ [0, 1]
-//   (Ŵ, F̂, Ŝ = per-participant baseline-normalised values)
-//
-//  EMA smoothing: α = 0.15 applied to all raw features before use.
-//  Baseline: first 900 frames (~30 s at 30 fps) per participant.
-// ─────────────────────────────────────────────────────────────────────────────
 
 const CFG = {
   EMA_ALPHA:       0.15,
