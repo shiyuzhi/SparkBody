@@ -214,7 +214,7 @@ export default function Fireworks({ poseData, isLowEnd }) {
         // 2. 簡化伸展度：只要手腕離肩膀有一點點距離 (0.1) 即可
         const leftArmExt  = Math.abs(leftHand.x - (leftShoulder?.x || 0));
         const rightArmExt = Math.abs(rightHand.x - (rightShoulder?.x || 0));
-        const isExtended  = leftArmExt > 0.4 && rightArmExt > 0.4;
+        const isExtended  = leftArmExt > 0.3 && rightArmExt > 0.3;
 
         const avgDY = (leftDY + rightDY) / 2;
 
@@ -246,7 +246,7 @@ export default function Fireworks({ poseData, isLowEnd }) {
           }
         }
       }
-      // 手部粒子 + 手勢偵測
+      
       // ==========================================
       ["leftHand", "rightHand"].forEach((key) => {
         const pos = currentPose?.[key];
