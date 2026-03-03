@@ -1,26 +1,26 @@
-//App.jsx
+// App.jsx
 import React, { useState, useEffect, useMemo } from "react";
 import "bootstrap/dist/css/bootstrap.min.css";
 import DraggableSkeleton from "./DraggableSkeleton";
 import DraggableYouTube from "./DraggableyouTube";
 import PoseSkeleton from "./PoseSkeleton";
 import Fireworks from "./Fireworks";
-// 1. 引入音訊控制實例
-import { drumKit } from "./Audio"; 
+import { drumKit } from "./Audio";
+import { setUserId, setMode } from "./AffectiveLogger";  // ★ 新增
 
 export default function App() {
   const [showSkeleton, setShowSkeleton] = useState(true);
   const [skeletonScale, setSkeletonScale] = useState(1);
   const [poseData, setPoseData] = useState(null);
-  const [gestureData, setGestureData] = useState([]); 
+  const [gestureData, setGestureData] = useState([]);
   const [showMusic, setShowMusic] = useState(false);
   const [videoId, setVideoId] = useState("4rgSzQwe5DQ");
   const [inputUrl, setInputUrl] = useState("https://youtu.be/4rgSzQwe5DQ");
-  
+
   const [midiList, setMidiList] = useState([]);
-  const [categories, setCategories] = useState([]); 
-  const [selectedCategory, setSelectedCategory] = useState(""); 
-  
+  const [categories, setCategories] = useState([]);
+  const [selectedCategory, setSelectedCategory] = useState("");
+
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   const [windowHeight, setWindowHeight] = useState(window.innerHeight);
 
@@ -31,16 +31,29 @@ export default function App() {
     return isWeakCPU || isIOSChrome || isSmallScreen;
   });
 
-  // 2. 初始化與音訊解鎖監聽
+  // ★ debug overlay 開關（預設關閉，點雙手面板旁的按鈕開啟）
+  const [showDebug, setShowDebug] = useState(false);
+
+  // ★ 受試者管理狀態
+  const [currentUserId, setCurrentUserId] = useState("P01");
+  const [inputUserId, setInputUserId] = useState("P01");
+  const [showUserPanel, setShowUserPanel] = useState(false);
+  const [isConfirmed, setIsConfirmed] = useState(false);
+
+  // ★ 確認受試者編號
+  const confirmUser = () => {
+    const id = inputUserId.trim() || "P01";
+    setCurrentUserId(id);
+    setUserId(id);
+    setMode("B");  // 現在都是 Mode B
+    setIsConfirmed(true);
+    setShowUserPanel(false);
+    console.log(`[Session] userId=${id} mode=B`);
+  };
+
   useEffect(() => {
-    /**
-     * 瀏覽器安全政策規定音訊必須由「使用者互動」開啟。
-     * 這裡監聽第一次點擊畫面來解鎖 AudioContext。
-     */
     const handleUnlockAudio = () => {
-      drumKit.init(); 
-      console.log("🔊 Audio System Initialized");
-      // 解鎖後移除監聽，避免重複執行
+      drumKit.init();
       window.removeEventListener("click", handleUnlockAudio);
     };
     window.addEventListener("click", handleUnlockAudio);
@@ -51,7 +64,6 @@ export default function App() {
     };
     window.addEventListener("resize", handleResize);
 
-    // 抓取 API 分類與清單
     fetch('https://imuse.ncnu.edu.tw/Midi-library/api/categories')
       .then(res => res.json())
       .then(data => setCategories(Array.isArray(data) ? data : []))
@@ -62,14 +74,11 @@ export default function App() {
       .then(data => {
         const list = data.items || data || [];
         setMidiList(list);
-
         const params = new URLSearchParams(window.location.search);
         const midiParam = params.get("midi");
         if (midiParam) {
           const matchMidi = list.find(m => m.title === midiParam);
-          if (matchMidi && matchMidi.description) {
-            handleUrlChange(matchMidi.description);
-          }
+          if (matchMidi && matchMidi.description) handleUrlChange(matchMidi.description);
         }
       })
       .catch(err => console.error("MIDI Error:", err));
@@ -78,7 +87,7 @@ export default function App() {
       window.removeEventListener("resize", handleResize);
       window.removeEventListener("click", handleUnlockAudio);
     };
-  }, []); 
+  }, []);
 
   const filteredMidiList = useMemo(() => {
     if (!selectedCategory) return midiList;
@@ -110,79 +119,167 @@ export default function App() {
     if (match && match[2].length === 11) {
       setVideoId(match[2]);
       setShowMusic(true);
-      // 切換歌曲時也嘗試喚醒音訊
-      drumKit.init(); 
+      drumKit.init();
     }
+  };
+
+  
+  const resetSession = () => {
+    // 1. 先確認是否要結束（防止誤觸）
+    if (!window.confirm("確定要結束這一位受試者並清除數據嗎？")) return;
+
+    // 2. 觸發網頁重新整理 (這是最乾淨的做法，能清除所有記憶體中的 LMA 狀態)
+    // 或者如果你不想重新整理，就手動重置 ID 並開啟輸入面板
+    setIsConfirmed(false);
+    setShowUserPanel(true);
+    setInputUserId(""); 
+    
+    // 最推薦的做法：直接重新整理，讓所有 Baseline 歸零
+    window.location.reload(); 
   };
 
   return (
     <div style={{ height: "100dvh", width: "100vw", backgroundColor: "black", overflow: "hidden", position: "relative" }}>
-      
-      {/* 雙手狀態面板 */}
+
+      {/* ★ 受試者輸入面板 */}
+      {showUserPanel && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 2000,
+          background: "rgba(0,0,0,0.85)",
+          display: "flex", alignItems: "center", justifyContent: "center"
+        }}>
+          <div style={{
+            background: "#1a1a2e", border: "1px solid #444",
+            borderRadius: 16, padding: "32px 40px",
+            display: "flex", flexDirection: "column", gap: 16,
+            minWidth: 280, textAlign: "center"
+          }}>
+            <div style={{ color: "#0ef", fontSize: "0.75rem", letterSpacing: "0.15em", textTransform: "uppercase" }}>
+              受試者編號
+            </div>
+            <input
+              autoFocus
+              value={inputUserId}
+              onChange={e => setInputUserId(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && confirmUser()}
+              style={{
+                background: "#0d0d1a", border: "1px solid #0ef",
+                borderRadius: 8, padding: "10px 16px",
+                color: "#fff", fontSize: "1.2rem",
+                textAlign: "center", outline: "none",
+                letterSpacing: "0.1em"
+              }}
+              placeholder="例：P01"
+            />
+            <button
+              onClick={confirmUser}
+              style={{
+                background: "#0ef", color: "#000",
+                border: "none", borderRadius: 8,
+                padding: "10px 0", fontSize: "1rem",
+                fontWeight: "bold", cursor: "pointer"
+              }}
+            >
+              確認開始
+            </button>
+            <button
+              onClick={() => setShowUserPanel(false)}
+              style={{
+                background: "transparent", color: "#666",
+                border: "none", fontSize: "0.8rem", cursor: "pointer"
+              }}
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      )}
+
+
+
+      {/* 雙手狀態面板 + debug 開關 */}
       <div style={{
         position: "absolute", bottom: isLandscapePhone ? "60px" : "85px", left: "15px", zIndex: 1000,
-        background: "rgba(0, 0, 0, 0.8)", padding: "8px 12px", borderRadius: "10px",
-        border: "1px solid #444", color: "#0f0", pointerEvents: "none", 
-        fontSize: "0.7rem", display: "flex", gap: "15px"
+        display: "flex", alignItems: "center", gap: 8
       }}>
-        <div>
-          <span style={{color: '#888'}}>LEFT</span><br/>
-          <strong style={{color: gestureData?.[0] ? '#ffcc00' : '#444'}}>
-            {gestureData?.[0]?.[0]?.categoryName || "Lost"}
-          </strong>
+        <div style={{
+          background: "rgba(0,0,0,0.8)", padding: "8px 12px", borderRadius: "10px",
+          border: "1px solid #444", color: "#0f0", pointerEvents: "none",
+          fontSize: "0.7rem", display: "flex", gap: "15px"
+        }}>
+          <div>
+            <span style={{ color: '#888' }}>LEFT</span><br />
+            <strong style={{ color: gestureData?.[0] ? '#ffcc00' : '#444' }}>
+              {gestureData?.[0]?.[0]?.categoryName || "Lost"}
+            </strong>
+          </div>
+          <div style={{ width: '1px', background: '#333' }}></div>
+          <div>
+            <span style={{ color: '#888' }}>RIGHT</span><br />
+            <strong style={{ color: gestureData?.[1] ? '#00e5ff' : '#444' }}>
+              {gestureData?.[1]?.[0]?.categoryName || "Lost"}
+            </strong>
+          </div>
         </div>
-        <div style={{width: '1px', background: '#333'}}></div>
-        <div>
-          <span style={{color: '#888'}}>RIGHT</span><br/>
-          <strong style={{color: gestureData?.[1] ? '#00e5ff' : '#444'}}>
-            {gestureData?.[1]?.[0]?.categoryName || "Lost"}
-          </strong>
+
+        {/* ★ debug 開關按鈕 */}
+        <div
+          onClick={() => setShowDebug(v => !v)}
+          style={{
+            background: showDebug ? "rgba(0,239,255,0.15)" : "rgba(255,255,255,0.05)",
+            border: `1px solid ${showDebug ? "#0ef" : "#444"}`,
+            borderRadius: 8, padding: "4px 8px",
+            color: showDebug ? "#0ef" : "#555",
+            fontSize: "0.65rem", cursor: "pointer",
+            fontFamily: "monospace"
+          }}
+        >
+          {showDebug ? "LMA ✓" : "LMA"}
         </div>
       </div>
 
-      {/* 煙火組件：內部會呼叫 drumKit.play */}
-      <Fireworks poseData={integratedPoseData} isLowEnd={isLowEnd} />
+      {/* 煙火 */}
+      <Fireworks poseData={integratedPoseData} isLowEnd={isLowEnd} showDebug={showDebug} mode="B" />
 
       <DraggableSkeleton
         scale={skeletonScale}
         visible={showSkeleton}
         onHide={() => setShowSkeleton(false)}
-        width={isLandscapePhone ? windowHeight * 0.8 : 600} 
+        width={isLandscapePhone ? windowHeight * 0.8 : 600}
         height={isLandscapePhone ? windowHeight * 0.8 : 600}
         initialPosition={isLandscapePhone ? { top: "5%", left: "15%" } : { top: "10%", left: "25%" }}
         transparent
       >
-        <PoseSkeleton 
-          onPoseUpdate={setPoseData} 
-          onGestureData={setGestureData} 
+        <PoseSkeleton
+          onPoseUpdate={setPoseData}
+          onGestureData={setGestureData}
           hideCanvas={!showSkeleton}
-          isLowEnd={isLowEnd} 
+          isLowEnd={isLowEnd}
         />
       </DraggableSkeleton>
 
-      {/* 底部工具列 */}
+      {/* 底部工具列（原版保留） */}
       <div className="w-100 d-flex align-items-center px-3 px-md-4"
-           style={{ 
-             background: "rgba(15, 15, 15, 0.95)", borderTop: "1px solid #333", zIndex: 200, 
-             position: "absolute", bottom: 0, height: isLandscapePhone ? "50px" : "65px",
-             paddingBottom: "env(safe-area-inset-bottom)"
-           }}>
-        
+        style={{
+          background: "rgba(15,15,15,0.95)", borderTop: "1px solid #333", zIndex: 200,
+          position: "absolute", bottom: 0, height: isLandscapePhone ? "50px" : "65px",
+          paddingBottom: "env(safe-area-inset-bottom)"
+        }}>
+
         <div className="d-flex align-items-center gap-2" style={{ zIndex: 10, flexShrink: 0 }}>
           <button className="btn btn-sm btn-info" onClick={() => {
-              setShowSkeleton(!showSkeleton);
-              drumKit.init(); // 點擊時啟動音訊
-            }}>
+            setShowSkeleton(!showSkeleton);
+            drumKit.init();
+          }}>
             <span className="d-none d-lg-inline">{showSkeleton ? "Hide Skeleton" : "Show Skeleton"}</span>
             <span className="d-lg-none">💀</span>
           </button>
           {!isLandscapePhone && (
-            <input type="range" min="0.3" max="2" step="0.1" value={skeletonScale} 
-                   onChange={(e) => setSkeletonScale(parseFloat(e.target.value))} 
-                   style={{ width: "60px" }} />
+            <input type="range" min="0.3" max="2" step="0.1" value={skeletonScale}
+              onChange={(e) => setSkeletonScale(parseFloat(e.target.value))}
+              style={{ width: "60px" }} />
           )}
-          
-          <button 
+          <button
             className={`btn btn-sm ${isLowEnd ? 'btn-secondary' : 'btn-success'} d-none d-md-inline`}
             onClick={() => setIsLowEnd(!isLowEnd)}
             style={{ fontSize: "0.7rem", fontWeight: "bold" }}
@@ -190,18 +287,43 @@ export default function App() {
             {isLowEnd ? "🚀 Lite Mode (ON)" : "💎 High Performance"}
           </button>
 
+          {/* ★ 受試者編號與重置按鈕 */}
+          <div className="d-flex align-items-center gap-1">
+            <button
+              onClick={() => { setShowUserPanel(true); setIsConfirmed(false); }}
+              style={{
+                background: isConfirmed ? "rgba(0,239,255,0.15)" : "rgba(255,100,100,0.2)",
+                border: `1px solid ${isConfirmed ? "#0ef" : "#f66"}`,
+                borderRadius: 6, padding: "4px 10px",
+                color: isConfirmed ? "#0ef" : "#f88",
+                fontSize: "0.7rem", cursor: "pointer",
+                fontFamily: "monospace", whiteSpace: "nowrap"
+              }}
+            >
+              {isConfirmed ? `👤 ${currentUserId}` : "⚠️ 設定受試者"}
+            </button>
+
+            {isConfirmed && (
+              <button
+                onClick={resetSession}
+                className="btn btn-sm btn-outline-danger"
+                style={{ fontSize: "0.6rem", padding: "2px 6px" }}
+              >
+                NEXT / RESET
+              </button>
+            )}
+          </div>
         </div>
 
-        <div className="position-absolute start-50 translate-middle-x text-center" 
-             style={{ pointerEvents: "none", display: windowWidth < 950 ? "none" : "block" }}>
+        <div className="position-absolute start-50 translate-middle-x text-center"
+          style={{ pointerEvents: "none", display: windowWidth < 950 ? "none" : "block" }}>
           <div className="text-light fw-bold" style={{ letterSpacing: "2px", whiteSpace: "nowrap", opacity: 0.7 }}>
             SPARKBODY STAGE
           </div>
         </div>
 
         <div className="ms-auto d-flex align-items-center gap-1 gap-md-2" style={{ zIndex: 10, flexShrink: 0 }}>
-          
-          <select 
+          <select
             className="form-select form-select-sm bg-dark text-info border-secondary shadow-none"
             style={{ width: isMobile ? "85px" : "110px", fontSize: "0.75rem" }}
             onChange={(e) => setSelectedCategory(e.target.value)}
@@ -213,7 +335,7 @@ export default function App() {
             ))}
           </select>
 
-          <select 
+          <select
             className="form-select form-select-sm bg-dark text-warning border-secondary shadow-none"
             style={{ width: isMobile ? "95px" : "145px", fontSize: "0.75rem" }}
             onChange={(e) => handleUrlChange(e.target.value)}
@@ -225,33 +347,33 @@ export default function App() {
             ))}
           </select>
 
-          <input 
-            type="text" 
-            value={inputUrl} 
-            onChange={handleUrlChange} 
-            className="form-control form-control-sm bg-dark text-info border-secondary d-none d-sm-block" 
-            style={{ width: "100px", fontSize: "0.75rem" }} 
-            placeholder="YT URL" 
+          <input
+            type="text"
+            value={inputUrl}
+            onChange={handleUrlChange}
+            className="form-control form-control-sm bg-dark text-info border-secondary d-none d-sm-block"
+            style={{ width: "100px", fontSize: "0.75rem" }}
+            placeholder="YT URL"
           />
 
           <button className="btn btn-sm btn-warning" onClick={() => {
-              setShowMusic(!showMusic);
-              drumKit.init(); // 點擊時啟動音訊
-            }}>
-              {isMobile ? "🎵" : "Music"}
+            setShowMusic(!showMusic);
+            drumKit.init();
+          }}>
+            {isMobile ? "🎵" : "Music"}
           </button>
         </div>
       </div>
 
       {showMusic && (
-        <DraggableYouTube 
-          videoId={videoId} 
-          width={isLandscapePhone ? 240 : 320} 
-          height={isLandscapePhone ? 135 : 180} 
-          initialPosition={{ 
-            top: 20, 
-            left: windowWidth - (isLandscapePhone ? 260 : 340) 
-          }} 
+        <DraggableYouTube
+          videoId={videoId}
+          width={isLandscapePhone ? 240 : 320}
+          height={isLandscapePhone ? 135 : 180}
+          initialPosition={{
+            top: 20,
+            left: windowWidth - (isLandscapePhone ? 260 : 340)
+          }}
         />
       )}
     </div>
