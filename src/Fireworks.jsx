@@ -188,29 +188,34 @@ export default function Fireworks({ poseData, isLowEnd, showDebug = false, mode 
 
       const currentPose = latestPose.current;
 
+      // 🛡️ 第一道防線：如果沒抓到人，直接跳過，不執行後續邏輯
+      if (!currentPose || !currentPose.leftHand || !currentPose.rightHand) {
+        raf = requestAnimationFrame(render);
+        return; 
+      }
+
+      // 安全取出座標
+      const { leftHand, rightHand, leftKnee, rightKnee,
+              leftElbow, rightElbow, leftShoulder, rightShoulder } = currentPose;
+
       // ══════════════════════════════════════════════════════════════════════
-      // ★ LMA 計算（每幀）— Mode B 才有意義，但 A 也跑以便 baseline 累積
+      // ★ 區塊一：LMA 計算與數據紀錄 (不影響煙火)
       // ══════════════════════════════════════════════════════════════════════
-      if (currentPose) {
-        const lma = extractLMA(currentPose);
+      const lma = extractLMA(currentPose);
+      if (lma) {
         lmaRef.current = lma;
 
-        // ★ Baseline 完成時記錄一次（每個 session 只跑一次）
         if (lma.baselineReady && !baselineLoggedRef.current) {
           baselineLoggedRef.current = true;
           log("Baseline_End", "30s baseline calibrated");
         }
 
-        // ┌─── 這裡開始是新增的自動紀錄邏輯 ───┐
         const now = Date.now();
         if (lma.baselineReady && (now - lastContinuousLogTime.current > 30000)) {
           log("Dance_Continuous", "30s_Interval_AutoLog");
           lastContinuousLogTime.current = now;
-          console.log("📊 自動紀錄：Dance_Continuous (30s)");
         }
-        // └─── 結束 ───┘
 
-        // ★ Debug overlay（只在 showDebug=true 時更新 DOM）
         if (showDebug && debugRef.current) {
           const pct = Math.round(lma.baselineProgress * 100);
           debugRef.current.innerHTML =
@@ -222,17 +227,16 @@ export default function Fireworks({ poseData, isLowEnd, showDebug = false, mode 
         }
       }
 
-      const { leftHand, rightHand, leftKnee, rightKnee,
-              leftElbow, rightElbow, leftShoulder, rightShoulder } = currentPose || {};
+      // ══════════════════════════════════════════════════════════════════════
+      // ★ 區塊二：煙火互動特效 (現在它們會正常跑了！)
+      // ══════════════════════════════════════════════════════════════════════
 
-      // ══════════════════════════════════════════════════════════════════════
-      // 🦅 Gull Flap（原版邏輯保留，新增 logLMAData）
-      // ══════════════════════════════════════════════════════════════════════
+      // 🦅 Gull Flap (海鷗拍翅)
       const MIN_WINGSPAN  = 0.30;
       const FLAP_SPEED    = 0.012;
       const BIRD_COOLDOWN = 800;
 
-      if (leftHand?.visibility > 0.7 && rightHand?.visibility > 0.7) {
+      if (leftHand.visibility > 0.7 && rightHand.visibility > 0.7) {
         const now     = Date.now();
         const bStatus = birdStatus.current;
         const leftDY  = (bStatus.prevLY ?? leftHand.y) - leftHand.y;
@@ -249,8 +253,6 @@ export default function Fireworks({ poseData, isLowEnd, showDebug = false, mode 
           if (now - bStatus.lastTriggerTime > BIRD_COOLDOWN) {
             bStatus.lastTriggerTime = now;
             drumKit.play("boom", { volume: 0.5, detune: -200 });
-
-            // ★ Log Gull_Flap
             log("Gull_Flap");
 
             const birdX = (1 - (leftHand.x + rightHand.x) / 2) * w;
@@ -346,18 +348,18 @@ export default function Fireworks({ poseData, isLowEnd, showDebug = false, mode 
         }
       }
 
-      // 膝蓋粒子（原版保留）
-      [leftKnee, rightKnee].forEach((knee, i) => {
-        if (knee?.visibility > 0.3) {
-          const kneeColor = i === 0 ? "#00FF00" : "#FF8C00";
-          particles.current.push(new Particle((1 - knee.x) * w, knee.y * h, kneeColor, "normal", isLowEnd));
-        }
-      });
+        // 膝蓋粒子（原版保留）
+        [leftKnee, rightKnee].forEach((knee, i) => {
+          if (knee?.visibility > 0.3) {
+            const kneeColor = i === 0 ? "#00FF00" : "#FF8C00";
+            particles.current.push(new Particle((1 - knee.x) * w, knee.y * h, kneeColor, "normal", isLowEnd));
+          }
+        });
 
-      // 粒子上限
-      const maxP = isLowEnd ? 400 : 1000;
-      if (particles.current.length > maxP)
-        particles.current.splice(0, particles.current.length - maxP);
+        // 粒子上限
+        const maxP = isLowEnd ? 400 : 1000;
+        if (particles.current.length > maxP)
+          particles.current.splice(0, particles.current.length - maxP);
 
       for (let i = particles.current.length - 1; i >= 0; i--) {
         const p = particles.current[i];
@@ -367,11 +369,11 @@ export default function Fireworks({ poseData, isLowEnd, showDebug = false, mode 
       }
 
       raf = requestAnimationFrame(render);
-    };
+  };
 
-    render();
-    return () => cancelAnimationFrame(raf);
-  },[isLowEnd, showDebug, mode]);
+  render();
+  return () => cancelAnimationFrame(raf);
+}, [isLowEnd, showDebug, mode]);
 
 return (
   <>
