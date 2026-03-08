@@ -29,7 +29,7 @@ class DrumKit {
   /**
    * 載入音檔
    * @param {string} name - 音效標籤名稱 (例如 'boom')
-   * @param {string} url - 檔案路徑 (相對於 public 或是完整 URL)
+   * @param {string} url - 檔案路徑
    */
   async loadBuffer(name, url) {
     this.init();
@@ -47,9 +47,9 @@ class DrumKit {
   /**
    * 播放音效
    * @param {string} name - 載入時設定的名稱
-   * @param {Object} options - 控制選項
+   * @param {Object} options - 控制選項 (包含新加入的 duration)
    */
-  play(name, { volume = 0.5, detune = 0, pan = 0 } = {}) {
+  play(name, { volume = 0.5, detune = 0, pan = 0, duration = null } = {}) {
     if (!this.buffers[name] || !this.context) return;
 
     if (this.context.state === 'suspended') this.context.resume();
@@ -65,7 +65,7 @@ class DrumKit {
     // 隨機音高：讓煙火聲不單調 (0.85 ~ 1.15 倍速)
     source.playbackRate.value = 0.85 + Math.random() * 0.3;
     
-    // 如果有額外的 detune 需求 (以分算，100分為半音)
+    // 如果有額外的 detune 需求
     if (detune) source.detune.value = detune;
 
     gainNode.gain.value = volume;
@@ -76,8 +76,27 @@ class DrumKit {
     panner.connect(gainNode);
     gainNode.connect(this.masterGain);
 
-    // 4. 播放並自動釋放資源
+    // 4. 播放
     source.start(0);
+
+    // ✨ 新增邏輯：處理播放長度 (讓 4 秒的音檔準時結束)
+    if (duration !== null) {
+      const currentTime = this.context.currentTime;
+      const stopTime = currentTime + duration;
+      
+      // 在結束前 0.1 秒開始淡出，避免聲音突然切斷產生的爆音
+      const fadeOutDuration = 0.1;
+      if (duration > fadeOutDuration) {
+        gainNode.gain.setValueAtTime(volume, stopTime - fadeOutDuration);
+        gainNode.gain.linearRampToValueAtTime(0, stopTime);
+      } else {
+        gainNode.gain.linearRampToValueAtTime(0, stopTime);
+      }
+      
+      source.stop(stopTime);
+    }
+
+    // 5. 自動釋放資源
     source.onended = () => {
       source.disconnect();
       panner.disconnect();
@@ -94,6 +113,8 @@ class DrumKit {
     }
   }
 }
+
+// 確保全局只有一個實例
 if (!window._drumKitInstance) {
   window._drumKitInstance = new DrumKit();
 }

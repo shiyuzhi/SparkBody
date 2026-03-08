@@ -121,14 +121,15 @@ export default function Fireworks({ poseData, isLowEnd, showDebug = false, mode 
     handsTouching: false,
   });
 
-  
-  const birdStatus   = useRef({ lastTriggerTime: 0, prevLY: null, prevRY: null });
+  const birdStatus   = useRef({ lastTriggerTime: 0, prevLY: null, prevRY: null, prevLVY: null, prevRVY: null, prevTime: null, phase: "IDLE", upFrames: 0, risingStartTime: null, wingsMissFrames: 0 });
   const birdTemplate = useRef(createBirdTemplate());
 
   useEffect(() => {
     const baseUrl   = import.meta.env.BASE_URL;
     const soundPath = `${baseUrl}/sounds/FWSnare.wav`.replace(/\/+/g, "/");
     drumKit.loadBuffer("boom", soundPath);
+    const birdPath = `${baseUrl}/sounds/bird.wav`.replace(/\/+/g, "/");
+    drumKit.loadBuffer("bird", birdPath);
   }, []);
 
   useEffect(() => {
@@ -188,7 +189,7 @@ export default function Fireworks({ poseData, isLowEnd, showDebug = false, mode 
 
       const currentPose = latestPose.current;
 
-      // 🛡️ 第一道防線：如果沒抓到人，直接跳過，不執行後續邏輯
+      // 第一道防線：如果沒抓到人，直接跳過，不執行後續邏輯
       if (!currentPose || !currentPose.leftHand || !currentPose.rightHand) {
         raf = requestAnimationFrame(render);
         return; 
@@ -218,53 +219,19 @@ export default function Fireworks({ poseData, isLowEnd, showDebug = false, mode 
 
         if (showDebug && debugRef.current) {
           const pct = Math.round(lma.baselineProgress * 100);
+          const row = (label, raw, norm) =>
+            `<div style="display:flex;gap:8px;justify-content:space-between">` +
+            `<span style="color:#888">${label}</span>` +
+            `<span>raw <b>${raw}</b></span>` +
+            `<span style="color:${lma.baselineReady ? '#0ef' : '#666'}">norm <b>${norm}</b></span>` +
+            `</div>`;
           debugRef.current.innerHTML =
-            `<div style="color:${lma.baselineReady ? '#afa' : '#ffd'}">${lma.baselineReady ? '✓ Baseline' : `⏳ ${pct}%`}</div>` +
-            `<div>S  ${lma.shape.toFixed(3)} → ${lma.n.shape.toFixed(3)}</div>` +
-            `<div>W  ${lma.weight.toFixed(3)} → ${lma.n.weight.toFixed(3)}</div>` +
-            `<div>F  ${lma.flow.toFixed(3)} → ${lma.n.flow.toFixed(3)}</div>` +
-            `<div style="color:#f9a">KT ${lma.kt.toFixed(3)}</div>`;
-        }
-      }
-
-      // ══════════════════════════════════════════════════════════════════════
-      // ★ 區塊二：煙火互動特效 (現在它們會正常跑了！)
-      // ══════════════════════════════════════════════════════════════════════
-
-      // 🦅 Gull Flap (海鷗拍翅)
-      const MIN_WINGSPAN  = 0.30;
-      const FLAP_SPEED    = 0.012;
-      const BIRD_COOLDOWN = 800;
-
-      if (leftHand.visibility > 0.7 && rightHand.visibility > 0.7) {
-        const now     = Date.now();
-        const bStatus = birdStatus.current;
-        const leftDY  = (bStatus.prevLY ?? leftHand.y) - leftHand.y;
-        const rightDY = (bStatus.prevRY ?? rightHand.y) - rightHand.y;
-        bStatus.prevLY = leftHand.y; bStatus.prevRY = rightHand.y;
-
-        const wingspan    = Math.abs(leftHand.x - rightHand.x);
-        const leftArmExt  = Math.abs(leftHand.x - (leftShoulder?.x || 0));
-        const rightArmExt = Math.abs(rightHand.x - (rightShoulder?.x || 0));
-        const isExtended  = leftArmExt > 0.3 && rightArmExt > 0.3;
-        const avgDY       = (leftDY + rightDY) / 2;
-
-        if (wingspan > MIN_WINGSPAN && isExtended && avgDY < -FLAP_SPEED) {
-          if (now - bStatus.lastTriggerTime > BIRD_COOLDOWN) {
-            bStatus.lastTriggerTime = now;
-            drumKit.play("boom", { volume: 0.5, detune: -200 });
-            log("Gull_Flap");
-
-            const birdX = (1 - (leftHand.x + rightHand.x) / 2) * w;
-            const birdY = ((leftHand.y + rightHand.y) / 2) * h;
-            const tmpl  = birdTemplate.current;
-            for (let i = 0; i < tmpl.length; i += (isLowEnd ? 4 : 2)) {
-              const item = tmpl[i];
-              const p = new Particle(birdX + item.baseX * 0.9, birdY + item.baseY * 0.9, item.color, "normal", isLowEnd);
-              p.vx = item.baseX * 0.005; p.vy = -0.8; p.decay = 0.015; p.friction = 0.995; p.size = 1.6;
-              particles.current.push(p);
-            }
-          }
+            `<div style="color:${lma.baselineReady ? '#afa' : '#ffd'};margin-bottom:4px">` +
+            `${lma.baselineReady ? '✓ Baseline ready' : `⏳ Calibrating... ${pct}%`}</div>` +
+            row("S Space ",  lma.shape.toFixed(3),  lma.n.shape.toFixed(3))  +
+            row("W Weight",  lma.weight.toFixed(3), lma.n.weight.toFixed(3)) +
+            row("F Flow  ",  lma.flow.toFixed(3),   lma.n.flow.toFixed(3))   +
+            `<div style="color:#f9a;margin-top:4px">KT composite &nbsp;<b>${lma.kt.toFixed(3)}</b></div>`;
         }
       }
 
@@ -287,7 +254,6 @@ export default function Fireworks({ poseData, isLowEnd, showDebug = false, mode 
 
         particles.current.push(new Particle(x, y, color, "normal", isLowEnd));
 
-     
         if (gesture === "Victory") {
           if (Math.random() > 0.8) drumKit.play("boom", { volume: 0.2, detune: 1000, pan });
           
@@ -311,7 +277,7 @@ export default function Fireworks({ poseData, isLowEnd, showDebug = false, mode 
 
         if (gesture === "Closed_Fist") {
           status.current[side + "Count"] = (status.current[side + "Count"] || 0) + 1;
-          if (status.current[side + "Count"] > 15) status.current[side + "Ready"] = true;
+          if (status.current[side + "Count"] > 8) status.current[side + "Ready"] = true; // 大约 8 帧（约 0.25 秒）
         } else {
           status.current[side + "Count"] = 0;
           if (gesture === "Open_Palm") {
@@ -334,32 +300,90 @@ export default function Fireworks({ poseData, isLowEnd, showDebug = false, mode 
       });
 
       // ══════════════════════════════════════════════════════════════════════
-      // 雙手碰 → 愛心（log 在 createSmallHeart 裡）
+      // 雙手碰 → 愛心（精準判定版）
       // ══════════════════════════════════════════════════════════════════════
-      if (leftHand?.visibility > 0.6 && rightHand?.visibility > 0.6) {
+      if (leftHand?.visibility > 0.7 && rightHand?.visibility > 0.7) {
         const lx = (1 - leftHand.x) * w, ly = leftHand.y * h;
         const rx = (1 - rightHand.x) * w, ry = rightHand.y * h;
-        const d  = Math.sqrt((rx - lx) ** 2 + (ry - ly) ** 2);
-        if (d < 80 && !status.current.handsTouching) {
-          createSmallHeart((lx + rx) / 2, (ly + ry) / 2);
-          status.current.handsTouching = true;
-        } else if (d >= 80) {
-          status.current.handsTouching = false;
+        const distance2D = Math.sqrt((rx - lx) ** 2 + (ry - ly) ** 2);
+        
+        // 距离够近 (d < 60) 且 深度相近 (depth < 0.05)
+        if (distance2D < 60 ) {
+          if (!status.current.handsTouching) {
+            status.current.touchCounter++;
+            
+            if (status.current.touchCounter > 8) {  // 持续约 0.25 秒以上才算真正碰到
+              createSmallHeart((lx + rx) / 2, (ly + ry) / 2);
+              status.current.handsTouching = true;
+            }
+          }
+        } else {
+          if (distance2D > 100) {
+            status.current.touchCounter = 0;
+            status.current.handsTouching = false;
+          }
         }
       }
 
-        // 膝蓋粒子（原版保留）
-        [leftKnee, rightKnee].forEach((knee, i) => {
-          if (knee?.visibility > 0.3) {
-            const kneeColor = i === 0 ? "#00FF00" : "#FF8C00";
-            particles.current.push(new Particle((1 - knee.x) * w, knee.y * h, kneeColor, "normal", isLowEnd));
-          }
-        });
+      // ══════════════════════════════════════════════════════════════════════
+      // 🦅 Gull Flap (海鷗拍翅) - 終極防誤觸版
+      if (leftHand.visibility > 0.8 && rightHand.visibility > 0.8 && leftShoulder && rightShoulder) {
+        const now = Date.now();
+        const bStatus = birdStatus.current;
+        const leftDY = (bStatus.prevLY ?? leftHand.y) - leftHand.y;
+        const rightDY = (bStatus.prevRY ?? rightHand.y) - rightHand.y;
+        bStatus.prevLY = leftHand.y; bStatus.prevRY = rightHand.y;
 
-        // 粒子上限
-        const maxP = isLowEnd ? 400 : 1000;
-        if (particles.current.length > maxP)
-          particles.current.splice(0, particles.current.length - maxP);
+        // ★ 動態比例尺
+        const shoulderWidth = Math.abs(leftShoulder.x - rightShoulder.x) || 0.1; 
+        const wingspan = Math.abs(leftHand.x - rightHand.x);
+        const leftArmExt = Math.abs(leftHand.x - leftShoulder.x);
+        const rightArmExt = Math.abs(rightHand.x - rightShoulder.x);
+
+        // ★ 判定區域：手要伸得夠開 (1.1 倍) 且 總寬度夠 (2.5 倍)
+        const isExtended = leftArmExt > shoulderWidth * 1.1 && rightArmExt > shoulderWidth * 1.1; 
+        const MIN_WINGSPAN = shoulderWidth * 2.5; 
+
+        // ★ 關鍵修正 1：手必須高於肩膀 (y 軸越小越高)
+        // 這能擋掉平推、慢動作在腰部晃動的誤觸
+        const handsAreHigh = leftHand.y < leftShoulder.y && rightHand.y < rightShoulder.y;
+
+        // ★ 關鍵修正 2：速度門檻設在 0.12 (剛好不難也不簡單)
+        const FLAP_SPEED = shoulderWidth * 0.12; 
+        const avgDY = (leftDY + rightDY) / 2;
+
+        // 最終判定：必須 [手舉高] + [夠開] + [往下揮得夠快]
+        if (handsAreHigh && wingspan > MIN_WINGSPAN && isExtended && avgDY < -FLAP_SPEED) {
+          if (now - (bStatus.lastTriggerTime || 0) > 1000) {
+            bStatus.lastTriggerTime = now;
+            drumKit.play("bird", { volume: 0.8, detune: -200, duration: 1.5 });
+            log("Gull_Flap");
+
+            const birdX = (1 - (leftHand.x + rightHand.x) / 2) * w;
+            const birdY = ((leftHand.y + rightHand.y) / 2) * h;
+            const tmpl = birdTemplate.current;
+            for (let i = 0; i < tmpl.length; i += (isLowEnd ? 4 : 2)) {
+              const item = tmpl[i];
+              const p = new Particle(birdX + item.baseX * 0.9, birdY + item.baseY * 0.9, item.color, "normal", isLowEnd);
+              p.vx = item.baseX * 0.005; p.vy = -0.8; p.decay = 0.015; p.friction = 0.995; p.size = 1.6;
+              particles.current.push(p);
+            }
+          }
+        }
+      }
+
+      // 膝蓋粒子（原版保留）
+      [leftKnee, rightKnee].forEach((knee, i) => {
+        if (knee?.visibility > 0.3) {
+          const kneeColor = i === 0 ? "#00FF00" : "#FF8C00";
+          particles.current.push(new Particle((1 - knee.x) * w, knee.y * h, kneeColor, "normal", isLowEnd));
+        }
+      });
+
+      // 粒子上限
+      const maxP = isLowEnd ? 400 : 1000;
+      if (particles.current.length > maxP)
+        particles.current.splice(0, particles.current.length - maxP);
 
       for (let i = particles.current.length - 1; i >= 0; i--) {
         const p = particles.current[i];
@@ -369,34 +393,34 @@ export default function Fireworks({ poseData, isLowEnd, showDebug = false, mode 
       }
 
       raf = requestAnimationFrame(render);
-  };
+    };
 
-  render();
-  return () => cancelAnimationFrame(raf);
-}, [isLowEnd, showDebug, mode]);
+    render();
+    return () => cancelAnimationFrame(raf);
+  }, [isLowEnd, showDebug, mode]);
 
-return (
-  <>
-    <canvas
-      ref={canvasRef}
-      style={{
-        position: "absolute",
-        top: 0,
-        left: 0,
-        width: "100%",
-        height: "100%",
-        pointerEvents: "none",
-        zIndex: 10, // 煙火粒子在中間層
-        mixBlendMode: "screen",
-        filter: "contrast(1.2) brightness(1.1)",
-      }}
-    />
-
-    {/* ★ 修改重點：確保 zIndex 高於所有元件 */}
-    {showDebug && (
-      <div
-        ref={debugRef}
+  return (
+    <>
+      <canvas
+        ref={canvasRef}
         style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          width: "100%",
+          height: "100%",
+          pointerEvents: "none",
+          zIndex: 10, // 煙火粒子在中間層
+          mixBlendMode: "screen",
+          filter: "contrast(1.2) brightness(1.1)",
+        }}
+      />
+
+      {/* ★ 修改重點：確保 zIndex 高於所有元件 */}
+      {showDebug && (
+        <div
+          ref={debugRef}
+          style={{
             position: "absolute",
             bottom: "150px", // 改成 bottom，距離底部 150px（避開工具列）
             left: "15px",
@@ -411,12 +435,12 @@ return (
             pointerEvents: "none",
             border: "1px solid #0ef",
             boxShadow: "0 0 10px rgba(0, 239, 255, 0.3)"
-        }}
-      >
-        {/* 這裡初始可以放個 Loading，直到 render 第一次更新 innerHTML */}
-        LMA Initialization...
-      </div>
-    )}
-  </>
-);
+          }}
+        >
+          {/* 這裡初始可以放個 Loading，直到 render 第一次更新 innerHTML */}
+          LMA Initialization...
+        </div>
+      )}
+    </>
+  );
 }
