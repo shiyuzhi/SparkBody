@@ -4,14 +4,21 @@ import { Holistic, POSE_CONNECTIONS } from "@mediapipe/holistic";
 import { Camera } from "@mediapipe/camera_utils"; 
 import { drawConnectors } from "@mediapipe/drawing_utils";
 
-export default function PoseSkeleton({ onPoseUpdate, onGestureData, hideCanvas = false, isLowEnd = false }) {
+export default function PoseSkeleton({
+  onPoseUpdate,
+  onGestureData,
+  hideCanvas = false,
+  isLowEnd = false,
+  skeletonCanvasRef = null,
+  lmaDataRef = null,
+  showDebug = false,
+}) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const holisticRef = useRef(null);
   const isLowEndRef = useRef(isLowEnd);
   const lastResultsRef = useRef(null);
 
-  // 距離計算輔助函數
   const dist = (p1, p2) => Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
 
   useEffect(() => {
@@ -26,7 +33,7 @@ export default function PoseSkeleton({ onPoseUpdate, onGestureData, hideCanvas =
     }
   }, [isLowEnd]);
 
- function drawSmile(ctx, landmarks, w, h) {
+  function drawSmile(ctx, landmarks, w, h) {
     const nose = landmarks[0];
     const lEye = landmarks[1];
     const rEye = landmarks[4];
@@ -34,12 +41,10 @@ export default function PoseSkeleton({ onPoseUpdate, onGestureData, hideCanvas =
 
     const centerX = nose.x * w;
     const eyeDist = Math.abs(lEye.x - rEye.x);
-    
-    // 讓嘴巴位置與寬度更接近 Mr. Happy 的誇張比例
     const mouthY = (nose.y + eyeDist * 0.75) * h;
-    const mouthWidth = eyeDist * w * 1.1; 
-    const mouthDepth = eyeDist * h * 0.5; // 控制 U 的深度
-    const hookSize = 10; // 嘴角小勾勾的大小
+    const mouthWidth = eyeDist * w * 1.1;
+    const mouthDepth = eyeDist * h * 0.5;
+    const hookSize = 10;
 
     ctx.save();
     ctx.strokeStyle = "white";
@@ -47,35 +52,30 @@ export default function PoseSkeleton({ onPoseUpdate, onGestureData, hideCanvas =
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
 
-    // --- 2. 繪製 Mr. Happy 大寬嘴 ---
-    ctx.beginPath();
-    // 起點 (左嘴角)
     const leftCornerX = centerX - mouthWidth / 2;
     const rightCornerX = centerX + mouthWidth / 2;
-    
+
+    ctx.beginPath();
     ctx.moveTo(leftCornerX, mouthY);
-    // 使用貝茲曲線畫出寬闊的平底 U
     ctx.bezierCurveTo(
-      leftCornerX, mouthY + mouthDepth, 
-      rightCornerX, mouthY + mouthDepth, 
+      leftCornerX, mouthY + mouthDepth,
+      rightCornerX, mouthY + mouthDepth,
       rightCornerX, mouthY
     );
     ctx.stroke();
 
-    // 左邊小勾
     ctx.beginPath();
     ctx.moveTo(leftCornerX - 2, mouthY + 5);
     ctx.quadraticCurveTo(leftCornerX - 5, mouthY - hookSize, leftCornerX - 12, mouthY - 2);
     ctx.stroke();
 
-    // 右邊小勾
     ctx.beginPath();
     ctx.moveTo(rightCornerX + 2, mouthY + 5);
     ctx.quadraticCurveTo(rightCornerX + 5, mouthY - hookSize, rightCornerX + 12, mouthY - 2);
     ctx.stroke();
 
     ctx.restore();
-}
+  }
 
   useEffect(() => {
     let isMounted = true;
@@ -159,7 +159,52 @@ export default function PoseSkeleton({ onPoseUpdate, onGestureData, hideCanvas =
           lineWidth: lineW - 1
         });
       }
+
+      // 還原鏡像 transform，在正常座標畫 LMA 儀表板
       ctx.restore();
+
+      const lma = lmaDataRef?.current;
+      if (showDebug && lma) {
+        const bw = 230, bh = 155;
+        const bx = 15, by = canvas.height - bh - 80;
+        ctx.save();
+        ctx.fillStyle = "rgba(0,0,0,0.82)";
+        ctx.strokeStyle = "#0ef";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(bx, by, bw, bh, 8);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.font = "bold 12px monospace";
+        ctx.fillStyle = lma.baselineReady ? "#afa" : "#ffd";
+        ctx.fillText(
+          lma.baselineReady ? "✓ Baseline ready" : `⏳ Calibrating... ${Math.round((lma.baselineProgress || 0) * 100)}%`,
+          bx + 10, by + 20
+        );
+
+        const drawBar = (label, val, color, y) => {
+          ctx.fillStyle = "#888";
+          ctx.font = "11px monospace";
+          ctx.fillText(label, bx + 10, y);
+          ctx.fillStyle = "#222";
+          ctx.fillRect(bx + 10, y + 3, 190, 9);
+          ctx.fillStyle = color;
+          ctx.fillRect(bx + 10, y + 3, Math.min(190, (val || 0) * 190), 9);
+          ctx.fillStyle = "#fff";
+          ctx.font = "bold 11px monospace";
+          ctx.fillText((val || 0).toFixed(3), bx + 160, y);
+        };
+
+        drawBar("S Space",  lma.n?.shape,  "#4ef", by + 40);
+        drawBar("W Weight", lma.n?.weight, "#f84", by + 68);
+        drawBar("F Flow",   lma.n?.flow,   "#8f8", by + 96);
+
+        ctx.fillStyle = "#f9a";
+        ctx.font = "bold 13px monospace";
+        ctx.fillText(`KT  ${(lma.kt || 0).toFixed(3)}`, bx + 10, by + 130);
+        ctx.restore();
+      }
     };
 
     holistic.onResults((results) => {
@@ -229,7 +274,14 @@ export default function PoseSkeleton({ onPoseUpdate, onGestureData, hideCanvas =
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
       <video ref={videoRef} style={{ display: "none" }} playsInline muted />
-      <canvas ref={canvasRef} style={{ width: "100%", height: "100%", objectFit: "contain", background: "transparent", pointerEvents: "none", zIndex: 1, display: hideCanvas ? "none" : "block" }} />
+      <canvas
+        ref={(el) => {
+          canvasRef.current = el;
+          if (skeletonCanvasRef) skeletonCanvasRef.current = el;
+        }}
+        id="skeleton-canvas"
+        style={{ width: "100%", height: "100%", objectFit: "contain", background: "transparent", pointerEvents: "none", zIndex: 1, display: hideCanvas ? "none" : "block" }}
+      />
     </div>
   );
 }

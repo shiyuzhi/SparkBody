@@ -1,5 +1,5 @@
 // App.jsx
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import "bootstrap/dist/css/bootstrap.min.css";
 import DraggableSkeleton from "./DraggableSkeleton";
 import DraggableYouTube from "./DraggableyouTube";
@@ -9,6 +9,7 @@ import { drumKit } from "./Audio";
 import MouseFireworks from "./MouseFireworks";
 // ★ Logger 整合
 import { flushImmediately, setUserId, setMode, generateNextUserId, resetSessionId } from "./AffectiveLogger";
+import CanvasRecorder from "./Canvasrecorder";
 
 export default function App() {
   // -------------------- 狀態 --------------------
@@ -42,7 +43,8 @@ export default function App() {
   const [sessionKey, setSessionKey] = useState(0);
   // 同步狀態
   const [syncState, setSyncState] = useState({ status: 'IDLE', pendingCount: 0, isOffline: false });
-  
+  const skeletonCanvasRef = useRef(null);
+  const lmaDataRef = useRef(null);
 
   // -------------------- memo 化 Fireworks 用 poseData --------------------
   const fireworksPose = useMemo(() => {
@@ -154,32 +156,15 @@ export default function App() {
   // -------------------- 渲染 --------------------
   return (
     <div style={{ height: "100dvh", width: "100vw", backgroundColor: "black", overflow: "hidden", position: "relative" }}>
-      {/* 雙手狀態面板 + debug + 同步指示燈 */}
-      <div style={{ position: "absolute", bottom: isLandscapePhone ? "60px" : "85px", left: "15px", zIndex: 1000, display: "flex", alignItems: "center", gap: 8 }}>
-        <div style={{ background: "rgba(0,0,0,0.8)", padding: "8px 12px", borderRadius: "10px", border: "1px solid #444", color: "#0f0", pointerEvents: "none", fontSize: "0.7rem", display: "flex", gap: "15px" }}>
-          <div>
-            <span style={{ color: '#888' }}>LEFT</span><br />
-            <strong style={{ color: gestureData?.[0] ? '#ffcc00' : '#444' }}>{gestureData?.[0]?.[0]?.categoryName || "Lost"}</strong>
-          </div>
-          <div style={{ width: '1px', background: '#333' }}></div>
-          <div>
-            <span style={{ color: '#888' }}>RIGHT</span><br />
-            <strong style={{ color: gestureData?.[1] ? '#00e5ff' : '#444' }}>{gestureData?.[1]?.[0]?.categoryName || "Lost"}</strong>
-          </div>
-        </div>
-
-        <div onClick={() => setShowDebug(v => !v)} style={{ background: showDebug ? "rgba(0,239,255,0.15)" : "rgba(255,255,255,0.05)", border: `1px solid ${showDebug ? "#0ef" : "#444"}`, borderRadius: 8, padding: "4px 8px", color: showDebug ? "#0ef" : "#555", fontSize: "0.65rem", cursor: "pointer", fontFamily: "monospace" }}>
-          {showDebug ? "LMA ✓" : "LMA"}
-        </div>
-      </div>
+      
 
       {/* Fireworks & Skeleton */}
-       <Fireworks poseData={fireworksPose} isLowEnd={isLowEnd} showDebug={showDebug} mode={`B-${sessionKey}`} />
+       <Fireworks poseData={fireworksPose} isLowEnd={isLowEnd} showDebug={showDebug} mode={`B-${sessionKey}`} onLMAUpdate={(lma) => { lmaDataRef.current = lma; }} />
 
       <DraggableSkeleton scale={skeletonScale} visible={showSkeleton} onHide={() => setShowSkeleton(false)}
         width={isLandscapePhone ? windowHeight * 0.8 : 600} height={isLandscapePhone ? windowHeight * 0.8 : 600}
         initialPosition={isLandscapePhone ? { top: "5%", left: "15%" } : { top: "10%", left: "25%" }} transparent>
-        <PoseSkeleton onPoseUpdate={setPoseData} onGestureData={setGestureData} hideCanvas={!showSkeleton} isLowEnd={isLowEnd} />
+        <PoseSkeleton onPoseUpdate={setPoseData} onGestureData={setGestureData} hideCanvas={!showSkeleton} isLowEnd={isLowEnd} skeletonCanvasRef={skeletonCanvasRef} lmaDataRef={lmaDataRef} showDebug={showDebug} />
       </DraggableSkeleton>
       <MouseFireworks isLowEnd={isLowEnd} />
 
@@ -199,6 +184,15 @@ export default function App() {
           </button>
           {isConfirmed && <button onClick={resetSession} className="btn btn-sm btn-outline-warning" style={{ fontSize: "0.6rem", padding: "2px 6px" }}>NEXT ▶</button>}
           </div>
+            <div onClick={() => setShowDebug(v => !v)} style={{ background: showDebug ? "rgba(0,239,255,0.15)" : "rgba(255,255,255,0.05)", border: `1px solid ${showDebug ? "#0ef" : "#444"}`, borderRadius: 8, padding: "4px 8px", color: showDebug ? "#0ef" : "#555", fontSize: "0.65rem", cursor: "pointer", fontFamily: "monospace" }}>
+              {showDebug ? "LMA ✓" : "LMA"}
+            </div>
+
+          <CanvasRecorder
+            fireworksSelector="#fireworks-canvas"
+            skeletonCanvasRef={skeletonCanvasRef}
+            userId={currentUserId}
+          />
 
         </div>
 

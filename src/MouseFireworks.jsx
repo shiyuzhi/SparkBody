@@ -5,6 +5,16 @@ import { gsap } from "gsap";
 // ==========================================
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
+// 預先建立 noiseBuffer 快取，避免每次點擊重新 allocate
+const _snareBuffer = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.2, audioCtx.sampleRate);
+const _hihatBuffer = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.5, audioCtx.sampleRate);
+(() => {
+  const s = _snareBuffer.getChannelData(0);
+  const h = _hihatBuffer.getChannelData(0);
+  for (let i = 0; i < s.length; i++) s[i] = Math.random() * 2 - 1;
+  for (let i = 0; i < h.length; i++) h[i] = Math.random() * 2 - 1;
+})();
+
 const playKick = (time, panValue) => {
   const osc = audioCtx.createOscillator();
   const gain = audioCtx.createGain();
@@ -26,11 +36,8 @@ const playSnare = (time, panValue) => {
   osc.frequency.setValueAtTime(250, time);
   oscGain.gain.setValueAtTime(0.6, time);
   oscGain.gain.exponentialRampToValueAtTime(0.01, time + 0.2);
-  const noiseBuffer = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.2, audioCtx.sampleRate);
-  const output = noiseBuffer.getChannelData(0);
-  for (let i = 0; i < output.length; i++) output[i] = Math.random() * 2 - 1;
   const noise = audioCtx.createBufferSource();
-  noise.buffer = noiseBuffer;
+  noise.buffer = _snareBuffer;
   const filter = audioCtx.createBiquadFilter();
   filter.type = "highpass";
   filter.frequency.value = 1500;
@@ -45,11 +52,8 @@ const playSnare = (time, panValue) => {
 };
 
 const playHiHat = (time, panValue, isOpen = false) => {
-  const noiseBuffer = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.5, audioCtx.sampleRate);
-  const output = noiseBuffer.getChannelData(0);
-  for (let i = 0; i < output.length; i++) output[i] = Math.random() * 2 - 1;
   const noise = audioCtx.createBufferSource();
-  noise.buffer = noiseBuffer;
+  noise.buffer = _hihatBuffer;
   const filter = audioCtx.createBiquadFilter();
   filter.type = "highpass";
   filter.frequency.value = 5000; 
@@ -144,6 +148,8 @@ export default function MouseFireworks({ isLowEnd }) {
   const svgRef = useRef(null);
   const comboCount = useRef(0);
   const lastClickTime = useRef(0);
+  const lastFireTime = useRef(0);
+  const activeCount = useRef(0);
 
   useEffect(() => {
     const handleGlobalClick = (e) => {
@@ -151,6 +157,8 @@ export default function MouseFireworks({ isLowEnd }) {
       if (['BUTTON', 'SELECT', 'INPUT', 'A'].includes(target.tagName) || target.closest('button')) return;
       const now = Date.now();
       // ★ 只改這裡：寬鬆的 5 秒 Combo
+      if (now - lastFireTime.current < 300) return; // throttle 300ms
+      lastFireTime.current = now;
       comboCount.current = (now - lastClickTime.current < 5000) ? comboCount.current + 1 : 0;
       lastClickTime.current = now;
       fire({ x: e.clientX, y: e.clientY }, comboCount.current);
@@ -162,6 +170,8 @@ export default function MouseFireworks({ isLowEnd }) {
   const fire = (m, combo) => {
     const stage = svgRef.current;
     if (!stage) return;
+    if (activeCount.current >= 6) return; // 最多同時 6 個
+    activeCount.current++;
     playLaunchSound(combo);
 
     const firework = document.createElementNS("http://www.w3.org/2000/svg", "g");
@@ -192,7 +202,7 @@ export default function MouseFireworks({ isLowEnd }) {
 
     const explosionScale = isLowEnd ? () => gsap.utils.random(30 + combo * 2, 60 + combo * 4, 1) : () => gsap.utils.random(40 + combo * 5, 80 + combo * 8, 1);
 
-    gsap.timeline({ onComplete: () => { if (stage.contains(firework)) stage.removeChild(firework); } })
+    gsap.timeline({ onComplete: () => { activeCount.current--; if (stage.contains(firework)) stage.removeChild(firework); } })
       .to(trail.children, { duration: 0.2, attr: { d: "M0,0 0,0" }, stagger: -0.08, ease: "expo.inOut" }, 0)
       .to(trail.children, { duration: 0.4, scale: explosionScale, attr: { stroke: hsl }, stagger: -0.15, ease: "expo" }, 0.4)
       .call(() => playExplosionSound(combo, isLowEnd, panValue), [], 0.4)

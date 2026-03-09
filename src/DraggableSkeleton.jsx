@@ -1,5 +1,4 @@
 // DraggableSkeleton.jsx
-// DraggableSkeleton.jsx
 import React, { useRef } from "react";
 import Draggable from "react-draggable"; // 確保這一行存在
 

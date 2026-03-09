@@ -96,7 +96,7 @@ function createBirdTemplate() {
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
-export default function Fireworks({ poseData, isLowEnd, showDebug = false, mode = "B" }) {
+export default function Fireworks({ poseData, isLowEnd, showDebug = false, mode = "B", onLMAUpdate }) {
   const canvasRef    = useRef(null);
   const debugRef     = useRef(null);  // overlay div
   const particles    = useRef([]);
@@ -205,6 +205,7 @@ export default function Fireworks({ poseData, isLowEnd, showDebug = false, mode 
       const lma = extractLMA(currentPose);
       if (lma) {
         lmaRef.current = lma;
+        onLMAUpdate?.(lma);
 
         if (lma.baselineReady && !baselineLoggedRef.current) {
           baselineLoggedRef.current = true;
@@ -217,24 +218,8 @@ export default function Fireworks({ poseData, isLowEnd, showDebug = false, mode 
           lastContinuousLogTime.current = now;
         }
 
-        if (showDebug && debugRef.current) {
-          const pct = Math.round(lma.baselineProgress * 100);
-          const row = (label, raw, norm) =>
-            `<div style="display:flex;gap:8px;justify-content:space-between">` +
-            `<span style="color:#888">${label}</span>` +
-            `<span>raw <b>${raw}</b></span>` +
-            `<span style="color:${lma.baselineReady ? '#0ef' : '#666'}">norm <b>${norm}</b></span>` +
-            `</div>`;
-          debugRef.current.innerHTML =
-            `<div style="color:${lma.baselineReady ? '#afa' : '#ffd'};margin-bottom:4px">` +
-            `${lma.baselineReady ? '✓ Baseline ready' : `⏳ Calibrating... ${pct}%`}</div>` +
-            row("S Space ",  lma.shape.toFixed(3),  lma.n.shape.toFixed(3))  +
-            row("W Weight",  lma.weight.toFixed(3), lma.n.weight.toFixed(3)) +
-            row("F Flow  ",  lma.flow.toFixed(3),   lma.n.flow.toFixed(3))   +
-            `<div style="color:#f9a;margin-top:4px">KT composite &nbsp;<b>${lma.kt.toFixed(3)}</b></div>`;
-        }
-      }
 
+      }
       // ══════════════════════════════════════════════════════════════════════
       // 手部粒子 + 手勢（原版邏輯保留，Explosion 新增 log）
       // ══════════════════════════════════════════════════════════════════════
@@ -334,21 +319,21 @@ export default function Fireworks({ poseData, isLowEnd, showDebug = false, mode 
         const rightDY = (bStatus.prevRY ?? rightHand.y) - rightHand.y;
         bStatus.prevLY = leftHand.y; bStatus.prevRY = rightHand.y;
 
-        // ★ 動態比例尺
+        // 動態比例尺
         const shoulderWidth = Math.abs(leftShoulder.x - rightShoulder.x) || 0.1; 
         const wingspan = Math.abs(leftHand.x - rightHand.x);
         const leftArmExt = Math.abs(leftHand.x - leftShoulder.x);
         const rightArmExt = Math.abs(rightHand.x - rightShoulder.x);
 
-        // ★ 判定區域：手要伸得夠開 (1.1 倍) 且 總寬度夠 (2.5 倍)
+        // 手要伸得夠開 (1.1 倍) 且 總寬度夠 (2.5 倍)
         const isExtended = leftArmExt > shoulderWidth * 1.1 && rightArmExt > shoulderWidth * 1.1; 
         const MIN_WINGSPAN = shoulderWidth * 2.5; 
 
-        // ★ 關鍵修正 1：手必須高於肩膀 (y 軸越小越高)
+        // 手必須高於肩膀 (y 軸越小越高)
         // 這能擋掉平推、慢動作在腰部晃動的誤觸
         const handsAreHigh = leftHand.y < leftShoulder.y && rightHand.y < rightShoulder.y;
 
-        // ★ 關鍵修正 2：速度門檻設在 0.12 (剛好不難也不簡單)
+        // 速度門檻設在 0.12 (剛好不難也不簡單)
         const FLAP_SPEED = shoulderWidth * 0.12; 
         const avgDY = (leftDY + rightDY) / 2;
 
@@ -392,6 +377,67 @@ export default function Fireworks({ poseData, isLowEnd, showDebug = false, mode 
         else p.draw(ctx);
       }
 
+      // ── 手勢 + LMA 數據畫進 Canvas（錄影才抓得到）──
+      if (currentPose) {
+        const leftG  = currentPose.leftHandGesture  || "None";
+        const rightG = currentPose.rightHandGesture || "None";
+        // 工具列 65px + 緩衝 10px
+        const toolbarH = 75;
+        const panelH = 60;
+        const lmaH = 105;
+        const panelY = h - toolbarH - panelH;
+        const lmaY   = h - toolbarH - lmaH;
+
+        ctx.globalCompositeOperation = "source-over";
+        ctx.fillStyle = "rgba(0,0,0,0.7)";
+        ctx.fillRect(15, panelY, 210, panelH);
+        ctx.strokeStyle = "#444";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(15, panelY, 210, panelH);
+
+        ctx.font = "bold 12px monospace";
+        ctx.textAlign = "left";
+
+        ctx.fillStyle = "#888";
+        ctx.fillText("LEFT", 25, panelY + 20);
+        ctx.fillStyle = leftG !== "None" && leftG !== "Lost" ? "#ffcc00" : "#555";
+        ctx.fillText(leftG, 25, panelY + 42);
+
+        ctx.fillStyle = "#333";
+        ctx.fillRect(100, panelY + 10, 1, 40);
+
+        ctx.fillStyle = "#888";
+        ctx.fillText("RIGHT", 115, panelY + 20);
+        ctx.fillStyle = rightG !== "None" && rightG !== "Lost" ? "#00e5ff" : "#555";
+        ctx.fillText(rightG, 115, panelY + 42);
+
+        if (showDebug && lmaRef.current) {
+          const lma = lmaRef.current;
+          const lmaX = 235;
+
+          ctx.fillStyle = "rgba(0,0,0,0.8)";
+          ctx.fillRect(lmaX, lmaY, 180, lmaH);
+          ctx.strokeStyle = lma.baselineReady ? "#0ef" : "#f80";
+          ctx.lineWidth = 1;
+          ctx.strokeRect(lmaX, lmaY, 180, lmaH);
+
+          ctx.font = "bold 12px monospace";
+          ctx.fillStyle = lma.baselineReady ? "#0ef" : "#ffd";
+          ctx.fillText(
+            lma.baselineReady ? "✓ LMA READY" : `⏳ CALIBRATING ${Math.round(lma.baselineProgress * 100)}%`,
+            lmaX + 10, lmaY + 18
+          );
+
+          ctx.font = "10px monospace";
+          ctx.fillStyle = "#ccc";
+          ctx.fillText(`SPACE:  ${lma.n.shape.toFixed(3)}`,  lmaX + 10, lmaY + 38);
+          ctx.fillText(`WEIGHT: ${lma.n.weight.toFixed(3)}`, lmaX + 10, lmaY + 53);
+          ctx.fillText(`FLOW:   ${lma.n.flow.toFixed(3)}`,   lmaX + 10, lmaY + 68);
+          ctx.fillStyle = "#f9a";
+          ctx.fillText(`KT:     ${lma.kt.toFixed(3)}`,       lmaX + 10, lmaY + 88);
+        }
+      }
+
       raf = requestAnimationFrame(render);
     };
 
@@ -399,10 +445,11 @@ export default function Fireworks({ poseData, isLowEnd, showDebug = false, mode 
     return () => cancelAnimationFrame(raf);
   }, [isLowEnd, showDebug, mode]);
 
-  return (
+ return (
     <>
       <canvas
         ref={canvasRef}
+        id="fireworks-canvas"
         style={{
           position: "absolute",
           top: 0,
@@ -415,32 +462,10 @@ export default function Fireworks({ poseData, isLowEnd, showDebug = false, mode 
           filter: "contrast(1.2) brightness(1.1)",
         }}
       />
-
-      {/* ★ 修改重點：確保 zIndex 高於所有元件 */}
-      {showDebug && (
-        <div
-          ref={debugRef}
-          style={{
-            position: "absolute",
-            bottom: "150px", // 改成 bottom，距離底部 150px（避開工具列）
-            left: "15px",
-            zIndex: 9999,
-            background: "rgba(0, 0, 0, 0.85)",
-            color: "#0ef",
-            fontFamily: "monospace",
-            fontSize: "12px",
-            padding: "10px",
-            borderRadius: "8px",
-            lineHeight: "1.6",
-            pointerEvents: "none",
-            border: "1px solid #0ef",
-            boxShadow: "0 0 10px rgba(0, 239, 255, 0.3)"
-          }}
-        >
-          {/* 這裡初始可以放個 Loading，直到 render 第一次更新 innerHTML */}
-          LMA Initialization...
-        </div>
-      )}
+      {/* 原本在這裡的 {showDebug && <div ref={debugRef}...>} 已被刪除。
+          所有的 Debug 資訊現在都透過 ctx.fillText 直接畫在上面的 canvas 裡。
+          這樣 CanvasRecorder 錄製出來的 WebM 才會包含這些數據。
+      */}
     </>
   );
 }

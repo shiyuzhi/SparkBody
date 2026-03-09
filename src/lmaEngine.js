@@ -2,7 +2,7 @@
 
 const CFG = {
   EMA_ALPHA:       0.15,
-  BASELINE_FRAMES: 900,
+  BASELINE_FRAMES: 300,
   MAX_JERK:        0.025,
   MAX_TELEPORT:    0.15,   //  新增：防止座標跳轉的閾值 (150px 或 0.15 視座標系而定)
   MIN_VISIBILITY:  0.5     //  新增：更嚴格的追蹤檢查
@@ -33,7 +33,7 @@ function buildBaseline(s, w, f) {
   if (_bl.ready) return;
   
   // 【防呆】如果動作太小（像在發呆），就不計入 Baseline，避免 mean 被拉低
-  if (s < 0.2 && w < 0.001) return; 
+  if (w < 0.001 && f > 0.95) return; // 靜止判定：無重量感且極度流暢 = 發呆
 
   _bl.buf.shape.push(s);
   _bl.buf.weight.push(w);
@@ -61,9 +61,14 @@ function normalise(key, v) {
 export function extractLMA(poseData) {
   const { leftHand: LH, rightHand: RH, leftShoulder: LS, rightShoulder: RS } = poseData || {};
 
-  // 🚀 修正 2：第一道防線 — 追蹤遺失檢查 ────────────────────────
-  if (!vis(LH) || !vis(RH)) {
-    _prev = null; // 清除前一幀記錄，防止手回來時發生「瞬移爆發」
+  // 分別檢查左右手是否可見
+  const validL = vis(LH);
+  const validR = vis(RH);
+
+  // 只要有「任何一隻手」看得見，就不算 trackingLost！(兩隻都不見才歸零)
+  if (!validL && !validR) {
+    _prev = null;
+    _ema = {}; // 兩隻手都不見才清空 EMA
     return {
       shape: 0, weight: 0, flow: 0.5, kt: 0,
       n: { shape: 0, weight: 0, flow: 0.5, kt: 0 },
@@ -73,45 +78,44 @@ export function extractLMA(poseData) {
     };
   }
 
-  // Shape 尺度不變性 (Scale Invariance) ────────────
-  // 使用「翼展 / 肩寬」比例，避免因受試者站得遠近而失效
-  const shoulderSpan = (LS && RS) ? dist2(LS, RS) : 0.2; 
-  const rawShape = dist2(LH, RH) / (shoulderSpan || 1);
+  // Shape 尺度不變性
+  const shoulderSpan = (LS && RS) ? dist2(LS, RS) : 0.2;
+  // 如果有一隻手藏在桌下，Shape 就沿用前一次的狀態，避免垃圾座標干擾
+  const rawShape = (validL && validR) ? dist2(LH, RH) / (shoulderSpan || 1) : (_ema.shape ?? 0.5);
   const sShape = ema("shape", rawShape);
 
-  // 瞬間移動 (Teleportation) 檢查 ──────────────────
+  let rawWeight = 0;
+  let rawJerk = 0;
+  let hasVelocity = false;
+  let velL = 0, velR = 0;
+
   if (_prev) {
-    const jumpL = Math.abs(LH.y - _prev.lhY);
-    const jumpR = Math.abs(RH.y - _prev.rhY);
-    if (jumpL > CFG.MAX_TELEPORT || jumpR > CFG.MAX_TELEPORT) {
-      _prev = null; // 跳轉過大，視為誤偵測，重置計算
+    hasVelocity = true;
+    let dVelL = 0, dVelR = 0;
+
+    // 只計算「看得見」的手的速度，看不見的當作 0
+    if (validL && _prev.lhY !== null) {
+      velL = LH.y - _prev.lhY;
+      dVelL = velL - (_prev.lhVy ?? velL);
+    }
+    if (validR && _prev.rhY !== null) {
+      velR = RH.y - _prev.rhY;
+      dVelR = velR - (_prev.rhVy ?? velR);
+    }
+
+    // Teleport 檢查也只針對看得見的手
+    if ((validL && Math.abs(velL) > CFG.MAX_TELEPORT) ||
+        (validR && Math.abs(velR) > CFG.MAX_TELEPORT)) {
+      _prev = null;
+      hasVelocity = false;
+    } else {
+      // 計算雙向垂直動作強度 (Movement Intensity)，取主動手最大值
+      rawWeight = Math.max(Math.abs(velL), Math.abs(velR));
+      rawJerk = Math.max(Math.abs(dVelL), Math.abs(dVelR));
     }
   }
 
-  // 🚀 修正 5：Weight 語義方向性 ────────────────────────────
-  let rawWeight = 0;
-  let hasVelocity = false;
-  if (_prev) {
-    hasVelocity = true;
-    const velL = LH.y - _prev.lhY; // Y 增加 = 向下 (Strong)
-    const velR = RH.y - _prev.rhY;
-    // 僅取向下分量，對應 Laban 的「重力感」
-    rawWeight = (Math.max(0, velL) + Math.max(0, velR)) / 2;
-  }
   const sWeight = ema("weight", rawWeight);
-
-  // Flow 邏輯反轉防護 ────────────────────────────
-  let rawJerk = 0;
-  if (_prev) {
-    const velL  = LH.y - _prev.lhY;
-    const velR  = RH.y - _prev.rhY;
-    const dVelL = velL - (_prev.lhVy ?? velL);
-    const dVelR = velR - (_prev.rhVy ?? velR);
-    rawJerk = Math.abs((dVelL + dVelR) / 2);
-    _prev.lhVy = velL;
-    _prev.rhVy = velR;
-  }
-  // 如果沒有速度數據，Flow 給予 0.5 中性值，而不是滿分
   const flowVal = hasVelocity ? clamp(1 - rawJerk / CFG.MAX_JERK, 0, 1) : 0.5;
   const sFlow = ema("flow", flowVal);
 
@@ -120,12 +124,16 @@ export function extractLMA(poseData) {
   const nShape  = normalise("shape",  sShape);
   const nWeight = normalise("weight", sWeight);
   const nFlow   = normalise("flow",   sFlow);
-  
-  // KT 合成公式：權重、流暢度與開展度的結合
+
   const kt = clamp(0.40 * nWeight + 0.35 * (1 - nFlow) + 0.25 * nShape, 0, 1);
 
-  // 更新前一幀
-  _prev = { lhY: LH.y, rhY: RH.y, lhVy: _prev?.lhVy ?? 0, rhVy: _prev?.rhVy ?? 0 };
+  // 更新前一幀 (看不見的手存 null，避免下次拿垃圾座標來減)
+  _prev = {
+    lhY: validL ? LH.y : null,
+    rhY: validR ? RH.y : null,
+    lhVy: validL && hasVelocity ? velL : null,
+    rhVy: validR && hasVelocity ? velR : null
+  };
 
   return {
     shape: sShape, weight: sWeight, flow: sFlow, kt,
