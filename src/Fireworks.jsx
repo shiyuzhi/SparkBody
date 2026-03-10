@@ -189,10 +189,12 @@ export default function Fireworks({ poseData, isLowEnd, showDebug = false, mode 
 
       const currentPose = latestPose.current;
 
-      // 第一道防線：如果沒抓到人，直接跳過，不執行後續邏輯
-      if (!currentPose || !currentPose.leftHand || !currentPose.rightHand) {
+      // 第一道防線：兩隻手都不見才跳過（支援單手互動）
+      const hasLeftHand  = currentPose?.leftHand  && currentPose.leftHand.visibility  > 0.5;
+      const hasRightHand = currentPose?.rightHand && currentPose.rightHand.visibility > 0.5;
+      if (!currentPose || (!hasLeftHand && !hasRightHand)) {
         raf = requestAnimationFrame(render);
-        return; 
+        return;
       }
 
       // 安全取出座標
@@ -218,7 +220,38 @@ export default function Fireworks({ poseData, isLowEnd, showDebug = false, mode 
           lastContinuousLogTime.current = now;
         }
 
+        // --- 找到 LMA 繪製區塊（約第 394 行） ---
+          if (showDebug && lmaRef.current) {
+            const lma = lmaRef.current;
+            const lmaX = 235;
+            
+            // ★ 修改這裡：讓 LMA 面板跟手勢面板(panelY)頂部對齊
+            // 因為 LMA 面板比較高(105px)，手勢面板高度是 60px
+            // 如果要看起來舒服，我們統一使用 panelY 作為基準
+            const lmaBaseY = panelY - 45; // 這樣兩塊面板的底部會差不多齊平
 
+            ctx.fillStyle = "rgba(0,0,0,0.8)";
+            ctx.fillRect(lmaX, lmaBaseY, 180, 105);
+            ctx.strokeStyle = lma.baselineReady ? "#0ef" : "#f80";
+            ctx.lineWidth = 1;
+            ctx.strokeRect(lmaX, lmaBaseY, 180, 105);
+
+            ctx.font = "bold 12px monospace";
+            ctx.fillStyle = lma.baselineReady ? "#0ef" : "#ffd";
+            // 文字坐標也要跟著 lmaBaseY 走
+            ctx.fillText(
+              lma.baselineReady ? "✓ LMA READY" : `⏳ CALIBRATING ${Math.round(lma.baselineProgress * 100)}%`,
+              lmaX + 10, lmaBaseY + 17
+            );
+
+            ctx.font = "10px monospace";
+            ctx.fillStyle = "#ccc";
+            ctx.fillText(`SPACE:  ${lma.n.shape.toFixed(3)}`,  lmaX + 10, lmaBaseY + 37);
+            ctx.fillText(`WEIGHT: ${lma.n.weight.toFixed(3)}`, lmaX + 10, lmaBaseY + 52);
+            ctx.fillText(`FLOW:   ${lma.n.flow.toFixed(3)}`,   lmaX + 10, lmaBaseY + 67);
+            ctx.fillStyle = "#f9a";
+            ctx.fillText(`KT:     ${lma.kt.toFixed(3)}`,       lmaX + 10, lmaBaseY + 87);
+          }
       }
       // ══════════════════════════════════════════════════════════════════════
       // 手部粒子 + 手勢（原版邏輯保留，Explosion 新增 log）
@@ -262,7 +295,7 @@ export default function Fireworks({ poseData, isLowEnd, showDebug = false, mode 
 
         if (gesture === "Closed_Fist") {
           status.current[side + "Count"] = (status.current[side + "Count"] || 0) + 1;
-          if (status.current[side + "Count"] > 8) status.current[side + "Ready"] = true; // 大约 8 帧（约 0.25 秒）
+          if (status.current[side + "Count"] > 5) status.current[side + "Ready"] = true;// 大約持續 0.15 秒以上才算握拳成功
         } else {
           status.current[side + "Count"] = 0;
           if (gesture === "Open_Palm") {
@@ -291,22 +324,19 @@ export default function Fireworks({ poseData, isLowEnd, showDebug = false, mode 
         const lx = (1 - leftHand.x) * w, ly = leftHand.y * h;
         const rx = (1 - rightHand.x) * w, ry = rightHand.y * h;
         const distance2D = Math.sqrt((rx - lx) ** 2 + (ry - ly) ** 2);
-        
-        // 距离够近 (d < 60) 且 深度相近 (depth < 0.05)
-        if (distance2D < 60 ) {
+
+        if (distance2D < 90) { // 距離放寬到 90px，手晃一下不會斷
           if (!status.current.handsTouching) {
             status.current.touchCounter++;
-            
-            if (status.current.touchCounter > 8) {  // 持续约 0.25 秒以上才算真正碰到
+            if (status.current.touchCounter >= 3) { // 3 幀就夠，不用等 8 幀
               createSmallHeart((lx + rx) / 2, (ly + ry) / 2);
               status.current.handsTouching = true;
+              status.current.touchCounter = 0; // 重置，下次才能再觸發
             }
           }
-        } else {
-          if (distance2D > 100) {
-            status.current.touchCounter = 0;
-            status.current.handsTouching = false;
-          }
+        } else if (distance2D > 130) { // 分開夠遠才重置
+          status.current.touchCounter = 0;
+          status.current.handsTouching = false;
         }
       }
 
@@ -319,21 +349,21 @@ export default function Fireworks({ poseData, isLowEnd, showDebug = false, mode 
         const rightDY = (bStatus.prevRY ?? rightHand.y) - rightHand.y;
         bStatus.prevLY = leftHand.y; bStatus.prevRY = rightHand.y;
 
-        // 動態比例尺
+        // ★ 動態比例尺
         const shoulderWidth = Math.abs(leftShoulder.x - rightShoulder.x) || 0.1; 
         const wingspan = Math.abs(leftHand.x - rightHand.x);
         const leftArmExt = Math.abs(leftHand.x - leftShoulder.x);
         const rightArmExt = Math.abs(rightHand.x - rightShoulder.x);
 
-        // 手要伸得夠開 (1.1 倍) 且 總寬度夠 (2.5 倍)
+        // ★ 判定區域：手要伸得夠開 (1.1 倍) 且 總寬度夠 (2.5 倍)
         const isExtended = leftArmExt > shoulderWidth * 1.1 && rightArmExt > shoulderWidth * 1.1; 
         const MIN_WINGSPAN = shoulderWidth * 2.5; 
 
-        // 手必須高於肩膀 (y 軸越小越高)
+        // ★ 關鍵修正 1：手必須高於肩膀 (y 軸越小越高)
         // 這能擋掉平推、慢動作在腰部晃動的誤觸
         const handsAreHigh = leftHand.y < leftShoulder.y && rightHand.y < rightShoulder.y;
 
-        // 速度門檻設在 0.12 (剛好不難也不簡單)
+        // ★ 關鍵修正 2：速度門檻設在 0.12 (剛好不難也不簡單)
         const FLAP_SPEED = shoulderWidth * 0.12; 
         const avgDY = (leftDY + rightDY) / 2;
 
@@ -381,7 +411,6 @@ export default function Fireworks({ poseData, isLowEnd, showDebug = false, mode 
       if (currentPose) {
         const leftG  = currentPose.leftHandGesture  || "None";
         const rightG = currentPose.rightHandGesture || "None";
-        // 工具列 65px + 緩衝 10px
         const toolbarH = 75;
         const panelH = 60;
         const lmaH = 105;
@@ -390,10 +419,10 @@ export default function Fireworks({ poseData, isLowEnd, showDebug = false, mode 
 
         ctx.globalCompositeOperation = "source-over";
         ctx.fillStyle = "rgba(0,0,0,0.7)";
-        ctx.fillRect(15, panelY, 210, panelH);
+        ctx.fillRect(15, panelY, 210, 60);
         ctx.strokeStyle = "#444";
         ctx.lineWidth = 1;
-        ctx.strokeRect(15, panelY, 210, panelH);
+        ctx.strokeRect(15, panelY, 210, 60);
 
         ctx.font = "bold 12px monospace";
         ctx.textAlign = "left";
@@ -416,10 +445,10 @@ export default function Fireworks({ poseData, isLowEnd, showDebug = false, mode 
           const lmaX = 235;
 
           ctx.fillStyle = "rgba(0,0,0,0.8)";
-          ctx.fillRect(lmaX, lmaY, 180, lmaH);
+          ctx.fillRect(lmaX, lmaY, 180, 105);
           ctx.strokeStyle = lma.baselineReady ? "#0ef" : "#f80";
           ctx.lineWidth = 1;
-          ctx.strokeRect(lmaX, lmaY, 180, lmaH);
+          ctx.strokeRect(lmaX, lmaY, 180, 105);
 
           ctx.font = "bold 12px monospace";
           ctx.fillStyle = lma.baselineReady ? "#0ef" : "#ffd";
