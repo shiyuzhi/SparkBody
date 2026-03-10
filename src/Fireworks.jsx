@@ -220,65 +220,37 @@ export default function Fireworks({ poseData, isLowEnd, showDebug = false, mode 
           lastContinuousLogTime.current = now;
         }
 
-        // --- 找到 LMA 繪製區塊（約第 394 行） ---
-          if (showDebug && lmaRef.current) {
-            const lma = lmaRef.current;
-            const lmaX = 235;
-            
-            // ★ 修改這裡：讓 LMA 面板跟手勢面板(panelY)頂部對齊
-            // 因為 LMA 面板比較高(105px)，手勢面板高度是 60px
-            // 如果要看起來舒服，我們統一使用 panelY 作為基準
-            const lmaBaseY = panelY - 45; // 這樣兩塊面板的底部會差不多齊平
-
-            ctx.fillStyle = "rgba(0,0,0,0.8)";
-            ctx.fillRect(lmaX, lmaBaseY, 180, 105);
-            ctx.strokeStyle = lma.baselineReady ? "#0ef" : "#f80";
-            ctx.lineWidth = 1;
-            ctx.strokeRect(lmaX, lmaBaseY, 180, 105);
-
-            ctx.font = "bold 12px monospace";
-            ctx.fillStyle = lma.baselineReady ? "#0ef" : "#ffd";
-            // 文字坐標也要跟著 lmaBaseY 走
-            ctx.fillText(
-              lma.baselineReady ? "✓ LMA READY" : `⏳ CALIBRATING ${Math.round(lma.baselineProgress * 100)}%`,
-              lmaX + 10, lmaBaseY + 17
-            );
-
-            ctx.font = "10px monospace";
-            ctx.fillStyle = "#ccc";
-            ctx.fillText(`SPACE:  ${lma.n.shape.toFixed(3)}`,  lmaX + 10, lmaBaseY + 37);
-            ctx.fillText(`WEIGHT: ${lma.n.weight.toFixed(3)}`, lmaX + 10, lmaBaseY + 52);
-            ctx.fillText(`FLOW:   ${lma.n.flow.toFixed(3)}`,   lmaX + 10, lmaBaseY + 67);
-            ctx.fillStyle = "#f9a";
-            ctx.fillText(`KT:     ${lma.kt.toFixed(3)}`,       lmaX + 10, lmaBaseY + 87);
-          }
       }
       // ══════════════════════════════════════════════════════════════════════
-      // 手部粒子 + 手勢（原版邏輯保留，Explosion 新增 log）
+      // 手部粒子 + 手勢（修正版：互斥判定與能見度優化）
       // ══════════════════════════════════════════════════════════════════════
       ["leftHand", "rightHand"].forEach((key) => {
-        const pos  = currentPose?.[key];
-        if (!pos || pos.visibility <= 0.6) return;
-        const x       = (1 - pos.x) * w;
-        const y       = pos.y * h;
-        const side    = key === "leftHand" ? "left" : "right";
+        const pos = currentPose?.[key];
+        // 修正：放寬門檻至 0.45，避免雙手模式下因效能波動導致單手消失
+        if (!pos || pos.visibility <= 0.45) return; 
+
+        const x = (1 - pos.x) * w;
+        const y = pos.y * h;
+        const side = key === "leftHand" ? "left" : "right";
+        const sideKey = side;
         const gesture = currentPose?.[side + "HandGesture"];
+        
         if (!status.current[side + "Color"]) {
           const hue = Math.floor(Math.random() * 360);
           status.current[side + "Color"] = `hsl(${hue}, 100%, 60%)`;
         }
         const color = status.current[side + "Color"];
-        const pan   = (x / w) * 2 - 1;
+        const pan = (x / w) * 2 - 1;
 
+        // 常態粒子發散
         particles.current.push(new Particle(x, y, color, "normal", isLowEnd));
 
+        // --- 手勢邏輯判定區 (修正為互斥結構) ---
         if (gesture === "Victory") {
+          // 1. 勝利手勢判定
           if (Math.random() > 0.8) drumKit.play("boom", { volume: 0.2, detune: 1000, pan });
           
-          const sideKey = side; // "left" 或 "right"
           const now = Date.now();
-          
-          // 每 2 秒才允許紀錄一次比 Ya，避免數據塞車
           if (now - lastVictoryLogTime.current[sideKey] > 2000) {
             log("Victory", sideKey);
             lastVictoryLogTime.current[sideKey] = now;
@@ -291,32 +263,40 @@ export default function Fireworks({ poseData, isLowEnd, showDebug = false, mode 
             p.vx = Math.cos(a) * 10; p.vy = Math.sin(a) * 10;
             particles.current.push(p);
           }
-        }
-
-        if (gesture === "Closed_Fist") {
-          status.current[side + "Count"] = (status.current[side + "Count"] || 0) + 1;
-          if (status.current[side + "Count"] > 5) status.current[side + "Ready"] = true;// 大約持續 0.15 秒以上才算握拳成功
-        } else {
+          // 確保比 Ya 的時候，握拳狀態與 Ready 狀態被鎖定，不產生誤觸
           status.current[side + "Count"] = 0;
-          if (gesture === "Open_Palm") {
-            if (status.current[side + "Ready"]) {
-              const newHue = Math.floor(Math.random() * 360);
-              status.current[side + "Color"] = `hsl(${newHue}, 100%, 60%)`;
-              const explosionColor = status.current[side + "Color"];
-              drumKit.play("boom", { volume: 0.6, detune: 0, pan });
-              for (let i = 0; i < (isLowEnd ? 15 : 40); i++)
-                particles.current.push(new Particle(x, y, explosionColor, "explosion", isLowEnd));
+          status.current[side + "Ready"] = false;
 
-              // ★ Log Explosion
-              log("Fireworks_Explosion", side);
-              status.current[side + "Ready"] = false;
+        } else if (gesture === "Closed_Fist") {
+          // 2. 握拳判定 (蓄力中)
+          status.current[side + "Count"] = (status.current[side + "Count"] || 0) + 1;
+          if (status.current[side + "Count"] > 5) { // 穩定握拳超過 3 幀才算準備好了
+            status.current[side + "Ready"] = true;
+          }
+
+        } else if (gesture === "Open_Palm") {
+          // 3. 張掌判定 (觸發煙火)
+          status.current[side + "Count"] = 0;
+          if (status.current[side + "Ready"]) {
+            const newHue = Math.floor(Math.random() * 360);
+            status.current[side + "Color"] = `hsl(${newHue}, 100%, 60%)`;
+            const explosionColor = status.current[side + "Color"];
+            drumKit.play("boom", { volume: 0.6, detune: 0, pan });
+            
+            for (let i = 0; i < (isLowEnd ? 15 : 40); i++) {
+              particles.current.push(new Particle(x, y, explosionColor, "explosion", isLowEnd));
             }
-          } else {
+
+            log("Fireworks_Explosion", side);
             status.current[side + "Ready"] = false;
           }
+        } else {
+          // 4. 其餘狀態 (None/Lost) 緩慢重置
+          status.current[side + "Count"] = 0;
+          status.current[side + "Ready"] = false;
         }
       });
-
+       
       // ══════════════════════════════════════════════════════════════════════
       // 雙手碰 → 愛心（精準判定版）
       // ══════════════════════════════════════════════════════════════════════
@@ -442,28 +422,56 @@ export default function Fireworks({ poseData, isLowEnd, showDebug = false, mode 
 
         if (showDebug && lmaRef.current) {
           const lma = lmaRef.current;
-          const lmaX = 235;
+          const lmaX = 15;
+          const lmaW = 260, lmaH2 = 175;
+          const lmaTop = h - toolbarH - lmaH2;
 
-          ctx.fillStyle = "rgba(0,0,0,0.8)";
-          ctx.fillRect(lmaX, lmaY, 180, 105);
+          ctx.fillStyle = "rgba(0,0,0,0.85)";
+          ctx.fillRect(lmaX, lmaTop, lmaW, lmaH2);
           ctx.strokeStyle = lma.baselineReady ? "#0ef" : "#f80";
-          ctx.lineWidth = 1;
-          ctx.strokeRect(lmaX, lmaY, 180, 105);
+          ctx.lineWidth = 1.5;
+          ctx.strokeRect(lmaX, lmaTop, lmaW, lmaH2);
 
-          ctx.font = "bold 12px monospace";
+          // 標題
+          ctx.font = "bold 15px monospace";
           ctx.fillStyle = lma.baselineReady ? "#0ef" : "#ffd";
           ctx.fillText(
             lma.baselineReady ? "✓ LMA READY" : `⏳ CALIBRATING ${Math.round(lma.baselineProgress * 100)}%`,
-            lmaX + 10, lmaY + 18
+            lmaX + 10, lmaTop + 22
           );
 
-          ctx.font = "10px monospace";
-          ctx.fillStyle = "#ccc";
-          ctx.fillText(`SPACE:  ${lma.n.shape.toFixed(3)}`,  lmaX + 10, lmaY + 38);
-          ctx.fillText(`WEIGHT: ${lma.n.weight.toFixed(3)}`, lmaX + 10, lmaY + 53);
-          ctx.fillText(`FLOW:   ${lma.n.flow.toFixed(3)}`,   lmaX + 10, lmaY + 68);
+          // 進度條（calibrating 時顯示）
+          if (!lma.baselineReady) {
+            ctx.fillStyle = "#333";
+            ctx.fillRect(lmaX + 10, lmaTop + 28, lmaW - 20, 8);
+            ctx.fillStyle = "#f80";
+            ctx.fillRect(lmaX + 10, lmaTop + 28, (lmaW - 20) * lma.baselineProgress, 8);
+          }
+
+          // 各項數值 + 進度條（label 在上，bar 在下，數值右對齊）
+          const drawRow = (label, val, color, y) => {
+            // label 左 + 數值右，同一行
+            ctx.font = "13px monospace";
+            ctx.fillStyle = "#aaa";
+            ctx.fillText(label, lmaX + 10, y);
+            ctx.font = "bold 13px monospace";
+            ctx.fillStyle = "#fff";
+            ctx.fillText((val || 0).toFixed(3), lmaX + lmaW - 48, y);
+            // 進度條在文字下方 4px
+            ctx.fillStyle = "#333";
+            ctx.fillRect(lmaX + 10, y + 5, lmaW - 20, 9);
+            ctx.fillStyle = color;
+            ctx.fillRect(lmaX + 10, y + 5, Math.min(lmaW - 20, (val || 0) * (lmaW - 20)), 9);
+          };
+
+          // 每行間距 38px（13px字 + 9px條 + 16px間距）
+          drawRow("SPACE",  lma.n.shape,  "#4ef", lmaTop + 52);
+          drawRow("WEIGHT", lma.n.weight, "#f84", lmaTop + 90);
+          drawRow("FLOW",   lma.n.flow,   "#8f8", lmaTop + 128);
+
           ctx.fillStyle = "#f9a";
-          ctx.fillText(`KT:     ${lma.kt.toFixed(3)}`,       lmaX + 10, lmaY + 88);
+          ctx.font = "bold 15px monospace";
+          ctx.fillText(`KT  ${lma.kt.toFixed(3)}`, lmaX + 10, lmaTop + 163);
         }
       }
 
