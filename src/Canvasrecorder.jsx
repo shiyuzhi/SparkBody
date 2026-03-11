@@ -1,6 +1,5 @@
 import { useRef, useState, useCallback, useEffect } from "react";
 
-// 靜態樣式優化：保持 UI 輕量
 const BUTTON_BASE_STYLE = {
   display: "flex",
   alignItems: "center",
@@ -15,7 +14,7 @@ const BUTTON_BASE_STYLE = {
   fontWeight: "600",
   fontFamily: "monospace",
   cursor: "pointer",
-  transition: "all 0.1s ease", // 縮短反應時間
+  transition: "all 0.1s ease",
   border: "1px solid",
   minWidth: "140px",
   height: "38px",
@@ -31,18 +30,25 @@ const CSS_ANIMATIONS = `
   .dot-idle { background: #666; }
 `;
 
+// 目標錄影 FPS，降低此數字可大幅減少 CPU 負擔
+const RECORD_FPS = 24;
+const FRAME_INTERVAL_MS = 1000 / RECORD_FPS;
+
 export default function CanvasRecorder({ fireworksSelector, skeletonCanvasRef, userId }) {
   const [isRecordingState, setIsRecordingState] = useState(false);
   const [seconds, setSeconds] = useState(0);
 
-  const recordingRef = useRef(false);
-  const compositeRef = useRef(null);
-  const recorderRef  = useRef(null);
-  const rafRef       = useRef(null);
-  const timerRef     = useRef(null);
-  const chunksRef    = useRef([]);
-  const secondsRef   = useRef(0);
-  const fwCanvasRef  = useRef(null);
+  const recordingRef  = useRef(false);
+  const compositeRef  = useRef(null);
+  // ★ ctx 只取一次，不在 drawFrame 裡重複呼叫 getContext
+  const ctxRef        = useRef(null);
+  const recorderRef   = useRef(null);
+  const rafRef        = useRef(null);
+  const timerRef      = useRef(null);
+  const chunksRef     = useRef([]);
+  const secondsRef    = useRef(0);
+  const fwCanvasRef   = useRef(null);
+  const lastDrawTime  = useRef(0);
 
   useEffect(() => {
     return () => {
@@ -50,35 +56,42 @@ export default function CanvasRecorder({ fireworksSelector, skeletonCanvasRef, u
     };
   }, []);
 
-  const drawFrame = useCallback(() => {
+  const drawFrame = useCallback((timestamp) => {
     if (!recordingRef.current) return;
 
+    // FPS 節流：距上次合成未滿一個 frame interval 就跳過
+    if (timestamp - lastDrawTime.current < FRAME_INTERVAL_MS) {
+      rafRef.current = requestAnimationFrame(drawFrame);
+      return;
+    }
+    lastDrawTime.current = timestamp;
+
+    const ctx = ctxRef.current;
+    if (!ctx) return;
+
     const composite = compositeRef.current;
-    if (!composite) return;
+    const fwCanvas  = fwCanvasRef.current;
+    const skCanvas  = skeletonCanvasRef?.current;
 
-    const ctx = composite.getContext("2d", { alpha: false });
-    const fwCanvas = fwCanvasRef.current || document.querySelector(fireworksSelector);
-    const skCanvas = skeletonCanvasRef?.current;
-
-    // 1. 底色
+    // 1. ★ 黑底用 fillRect（影片需要黑底）；若不需黑底改 clearRect 更快
     ctx.fillStyle = "#000";
     ctx.fillRect(0, 0, composite.width, composite.height);
 
-    // 2. 繪製 (360p 下 drawImage 的負擔極低)
-    if (fwCanvas && fwCanvas.width > 0) {
-      ctx.drawImage(fwCanvas, 0, 0, fwCanvas.width, fwCanvas.height, 0, 0, composite.width, composite.height);
-      if (!fwCanvasRef.current) fwCanvasRef.current = fwCanvas;
+    // 2. 合成兩個 canvas
+    //    drawImage 會自動做 GPU-accelerated downscale，不需手動計算
+    if (fwCanvas?.width > 0) {
+      ctx.drawImage(fwCanvas, 0, 0, composite.width, composite.height);
     }
-    if (skCanvas && skCanvas.width > 0) {
-      ctx.drawImage(skCanvas, 0, 0, skCanvas.width, skCanvas.height, 0, 0, composite.width, composite.height);
+    if (skCanvas?.width > 0) {
+      ctx.drawImage(skCanvas, 0, 0, composite.width, composite.height);
     }
 
-    // 3. 浮水印
-    ctx.font = "14px monospace"; // 360p 字體縮小
-    ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
+    // 3. 浮水印（輕量文字，避免 shadowBlur）
     const mm = String(Math.floor(secondsRef.current / 60)).padStart(2, "0");
     const ss = String(secondsRef.current % 60).padStart(2, "0");
-    ctx.fillText(`REC ${mm}:${ss} | ${userId || "User"}`, 15, composite.height - 15);
+    ctx.font = "13px monospace";
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    ctx.fillText(`REC ${mm}:${ss}  ${userId || ""}`, 12, composite.height - 12);
 
     rafRef.current = requestAnimationFrame(drawFrame);
   }, [fireworksSelector, skeletonCanvasRef, userId]);
@@ -87,15 +100,17 @@ export default function CanvasRecorder({ fireworksSelector, skeletonCanvasRef, u
     recordingRef.current = false;
     setIsRecordingState(false);
 
-    if (recorderRef.current && recorderRef.current.state !== "inactive") {
+    if (recorderRef.current?.state !== "inactive") {
       recorderRef.current.stop();
     }
 
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    if (rafRef.current)  cancelAnimationFrame(rafRef.current);
     if (timerRef.current) clearInterval(timerRef.current);
-    
+
     recorderRef.current = null;
     fwCanvasRef.current = null;
+    ctxRef.current      = null;
+    lastDrawTime.current = 0;
     setSeconds(0);
   }, []);
 
@@ -103,41 +118,56 @@ export default function CanvasRecorder({ fireworksSelector, skeletonCanvasRef, u
     const composite = compositeRef.current;
     if (!composite) return;
 
-    // 🔴 降級為 360p：極大提升流暢度
-    composite.width = 640;
+    // 360p：合成解析度夠用，且比 720p 省約 75% GPU 合成成本
+    composite.width  = 640;
     composite.height = 360;
-    
-    chunksRef.current = [];
+
+    // ★ getContext 只在這裡取一次，後續 drawFrame 直接用 ctxRef.current
+    ctxRef.current = composite.getContext("2d", { alpha: false, willReadFrequently: false });
+
+    // ★ fireworks canvas DOM query 只在錄影開始時做一次
+    fwCanvasRef.current = document.querySelector(fireworksSelector) ?? null;
+
+    chunksRef.current    = [];
     recordingRef.current = true;
     setIsRecordingState(true);
 
-    const stream = composite.captureStream(24); // 降到 24fps 更有電影感且更順
-    const recorder = new MediaRecorder(stream, { 
-      mimeType: "video/webm;codecs=vp8", // VP8 在低解析度下最快
-      videoBitsPerSecond: 800000 // 800kbps 針對 360p 已足夠清晰
+    // captureStream FPS 與 RECORD_FPS 一致，避免瀏覽器在背景多餘插幀
+    const stream = composite.captureStream(RECORD_FPS);
+
+    // ★ 優先嘗試 VP9（壓縮率更高 → 寫入負擔更小）；不支援則降回 VP8
+    const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
+      ? "video/webm;codecs=vp9"
+      : "video/webm;codecs=vp8";
+
+    const recorder = new MediaRecorder(stream, {
+      mimeType,
+      // ★ 降低位元率：360p@24fps 用 600kbps 已很清晰，減少編碼器 CPU 佔用
+      videoBitsPerSecond: 600_000,
     });
 
     recorder.ondataavailable = (e) => {
-      if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
+      if (e.data?.size > 0) chunksRef.current.push(e.data);
     };
 
     recorder.onstop = () => {
-      if (chunksRef.current.length === 0) return;
+      if (!chunksRef.current.length) return;
       const blob = new Blob(chunksRef.current, { type: "video/webm" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `REC_360p_${userId || "user"}_${Date.now()}.webm`;
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement("a");
+      a.href     = url;
+      a.download = `REC_${userId || "user"}_${Date.now()}.webm`;
       document.body.appendChild(a);
       a.click();
       setTimeout(() => {
-        if (a.parentNode) document.body.removeChild(a);
+        a.parentNode?.removeChild(a);
         URL.revokeObjectURL(url);
       }, 500);
     };
 
     recorderRef.current = recorder;
-    recorder.start(1000); 
+    // ★ timeslice 2000ms：兼顧 ondataavailable 呼叫頻率低 與 停止時不卡頓
+    recorder.start(2000);
 
     secondsRef.current = 0;
     setSeconds(0);
@@ -145,18 +175,15 @@ export default function CanvasRecorder({ fireworksSelector, skeletonCanvasRef, u
       secondsRef.current++;
       setSeconds(secondsRef.current);
     }, 1000);
-    
-    requestAnimationFrame(drawFrame);
-  }, [drawFrame, userId, stopRecording]);
+
+    lastDrawTime.current = 0;
+    rafRef.current = requestAnimationFrame(drawFrame);
+  }, [drawFrame, userId]);
 
   const handleToggleRecording = (e) => {
     e.preventDefault();
     e.stopPropagation();
-    if (isRecordingState) {
-      stopRecording();
-    } else {
-      startRecording();
-    }
+    isRecordingState ? stopRecording() : startRecording();
   };
 
   return (
@@ -172,8 +199,8 @@ export default function CanvasRecorder({ fireworksSelector, skeletonCanvasRef, u
       >
         <span className={`dot ${isRecordingState ? "dot-active" : "dot-idle"}`} />
         <span style={{ fontVariantNumeric: "tabular-nums", minWidth: "85px", textAlign: "left" }}>
-          {isRecordingState 
-            ? `STOP ${Math.floor(seconds / 60)}:${(seconds % 60).toString().padStart(2, '0')}` 
+          {isRecordingState
+            ? `STOP ${Math.floor(seconds / 60)}:${(seconds % 60).toString().padStart(2, "0")}`
             : "START REC"}
         </span>
       </button>

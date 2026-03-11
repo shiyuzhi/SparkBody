@@ -63,17 +63,6 @@ export default function PoseSkeleton({
       rightCornerX, mouthY
     );
     ctx.stroke();
-
-    ctx.beginPath();
-    ctx.moveTo(leftCornerX - 2, mouthY + 5);
-    ctx.quadraticCurveTo(leftCornerX - 5, mouthY - hookSize, leftCornerX - 12, mouthY - 2);
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.moveTo(rightCornerX + 2, mouthY + 5);
-    ctx.quadraticCurveTo(rightCornerX + 5, mouthY - hookSize, rightCornerX + 12, mouthY - 2);
-    ctx.stroke();
-
     ctx.restore();
   }
 
