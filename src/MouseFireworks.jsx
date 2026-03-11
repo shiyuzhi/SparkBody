@@ -140,7 +140,7 @@ const playExplosionSound = (combo, isLowEnd, panValue) => {
   else if (beat === 2) { playSnare(time, panValue); playKick(time, panValue); }
   else if (beat === 3) { playTom(time, panValue, 120); playHiHat(time, panValue, true); }
   
-  // 原版最迷人的和弦觸發
+  // 弦觸發
   if (combo >= 8 && (beat === 0 || beat === 2)) playChord(time, panValue);
 };
 

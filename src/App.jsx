@@ -24,6 +24,8 @@ export default function App() {
   const [midiList, setMidiList] = useState([]);
   const [categories, setCategories] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState("");
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [expandedCat, setExpandedCat] = useState(null);
 
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   const [windowHeight, setWindowHeight] = useState(window.innerHeight);
@@ -202,18 +204,208 @@ export default function App() {
         </div>
 
         {/* 點歌區 */}
-        <div className="ms-auto d-flex align-items-center gap-1 gap-md-2" style={{ zIndex: 10, flexShrink: 0 }}>
-          <select className="form-select form-select-sm bg-dark text-info border-secondary shadow-none" style={{ width: isMobile ? "85px" : "110px", fontSize: "0.75rem" }} onChange={(e) => setSelectedCategory(e.target.value)} value={selectedCategory}>
-            <option value="">所有分類</option>
-            {categories.map((cat, idx) => <option key={idx} value={cat}>{cat}</option>)}
-          </select>
-          <select className="form-select form-select-sm bg-dark text-warning border-secondary shadow-none" style={{ width: isMobile ? "95px" : "145px", fontSize: "0.75rem" }} onChange={(e) => handleUrlChange(e.target.value)} value={inputUrl}>
-            <option value="">快速點歌</option>
-            {filteredMidiList.map(midi => <option key={midi.id} value={midi.description}>{midi.title}</option>)}
-          </select>
-          <input type="text" value={inputUrl} onChange={handleUrlChange} className="form-control form-control-sm bg-dark text-info border-secondary d-none d-sm-block" style={{ width: "100px", fontSize: "0.75rem" }} placeholder="YT URL" />
-          <button className="btn btn-sm btn-warning" onClick={() => { setShowMusic(!showMusic); drumKit.init(); }}>{isMobile ? "🎵" : "Music"}</button>
+        <style>{`
+          .music-trigger {
+            display: flex; align-items: center; gap: 6px;
+            padding: 6px 14px; border-radius: 6px; cursor: pointer;
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.25);
+            color: #ffffff; font-size: 0.82rem; font-family: monospace;
+            letter-spacing: 0.05em; white-space: nowrap;
+            transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+            user-select: none;
+          }
+          .music-trigger:hover, .music-trigger.open {
+            background: rgba(255,255,255,0.12);
+            border-color: rgba(255,255,255,0.55);
+            box-shadow: 0 0 8px rgba(255,255,255,0.12);
+          }
+          .music-trigger .arr {
+            font-size: 0.55rem; opacity: 0.6;
+            display: inline-block;
+            transition: transform 0.2s;
+          }
+          .music-trigger.open .arr { transform: rotate(180deg); }
+
+          .music-panel {
+            position: absolute; bottom: calc(100% + 8px); right: 0;
+            width: 240px; max-height: 52vh;
+            background: #0d0d0d;
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 8px;
+            box-shadow: 0 -8px 32px rgba(0,0,0,0.85), 0 0 0 1px rgba(255,255,255,0.03);
+            overflow-y: auto; overflow-x: hidden;
+            z-index: 1001;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255,255,255,0.2) transparent;
+          }
+          .music-panel::-webkit-scrollbar { width: 3px; }
+          .music-panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 2px; }
+
+          .cat-row {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 10px 14px; cursor: pointer;
+            color: #ffc107; font-size: 0.82rem; font-family: monospace;
+            letter-spacing: 0.04em; user-select: none;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            transition: background 0.12s;
+          }
+          .cat-row:hover { background: rgba(255,180,0,0.07); }
+          .cat-row.active { background: rgba(255,180,0,0.12); color: #ffd54f; }
+          .cat-arrow {
+            font-size: 0.5rem; opacity: 0.5;
+            display: inline-block;
+            transition: transform 0.18s, opacity 0.18s;
+          }
+          .cat-row.active .cat-arrow { transform: rotate(90deg); opacity: 1; }
+
+          .song-list { border-left: 2px solid rgba(255,180,0,0.25); }
+          .song-row {
+            padding: 8px 12px 8px 16px; cursor: pointer;
+            color: rgba(0,210,255,0.8); font-size: 0.78rem; font-family: monospace;
+            border-bottom: 1px solid rgba(255,255,255,0.03);
+            transition: background 0.1s, color 0.1s, padding-left 0.12s;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+          }
+          .song-row:hover {
+            background: rgba(0,220,255,0.07);
+            color: #00e5ff;
+            padding-left: 20px;
+          }
+          .show-btn {
+            display: flex; align-items: center; justify-content: center;
+            border-radius: 6px; cursor: pointer;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: rgba(255,255,255,0.6); font-size: 0.82rem;
+            font-family: monospace; padding: 6px 14px;
+            transition: all 0.15s; flex-shrink: 0; user-select: none;
+            white-space: nowrap;
+          }
+          .show-btn:hover, .show-btn.on {
+            background: rgba(255,180,0,0.12);
+            border-color: rgba(255,180,0,0.55);
+            color: #ffc107;
+            box-shadow: 0 0 6px rgba(255,180,0,0.2);
+          }
+          .feedback-btn {
+            display: flex; align-items: center; justify-content: center;
+            width: 34px; height: 34px; border-radius: 50%; cursor: pointer;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.15);
+            font-size: 1rem; text-decoration: none;
+            transition: all 0.18s; flex-shrink: 0;
+            animation: feedback-pulse 3s ease-in-out infinite;
+          }
+          .feedback-btn:hover {
+            background: rgba(100,220,255,0.12);
+            border-color: rgba(100,220,255,0.5);
+            box-shadow: 0 0 10px rgba(100,220,255,0.25);
+            transform: scale(1.1);
+          }
+          @keyframes feedback-pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(100,220,255,0); }
+            50% { box-shadow: 0 0 0 4px rgba(100,220,255,0.12); }
+          }
+        `}</style>
+
+        <div className="ms-auto d-flex align-items-center gap-2"
+          style={{ zIndex: 1000, position: "relative", flexShrink: 0 }}>
+
+          {/* 回饋表單按鈕 */}
+          <a href="https://forms.gle/fmD9XYixYHLLrjQP6" target="_blank" rel="noopener noreferrer"
+            className="feedback-btn" title="填寫回饋表單">
+            📮
+          </a>
+
+
+          {/* YT URL 輸入框 */}
+          <input type="text" value={inputUrl} onChange={handleUrlChange}
+            className="d-none d-md-block"
+            style={{ width: "110px", fontSize: "0.72rem", padding: "5px 8px",
+              background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.15)",
+              borderRadius: 5, color: "#0ef", outline: "none", fontFamily: "monospace" }}
+            placeholder="貼上 YouTube 連結" />
+
+        
+          {/* 點歌觸發器 */}
+          <div className={`music-trigger${isMenuOpen ? " open" : ""}`}
+            onClick={() => { setIsMenuOpen(v => !v); setExpandedCat(null); }}>
+            <span>♩</span>
+            {!isMobile && <span>點歌</span>}
+            <span className="arr">▼</span>
+          </div>
+
+          {/* 下拉面板 */}
+          {isMenuOpen && (
+            <div className="music-panel">
+              {categories.map((cat) => {
+                const songs = midiList.filter((m) =>
+                  (Array.isArray(m.categories) && m.categories.includes(cat)) ||
+                  m.categories_text === cat
+                );
+                if (!songs.length) return null;
+                const active = expandedCat === cat;
+                return (
+                  <div key={cat}>
+                    <div className={`cat-row${active ? " active" : ""}`}
+                      onClick={() => setExpandedCat(active ? null : cat)}>
+                      <span>{cat}</span>
+                      <span className="cat-arrow">▶</span>
+                    </div>
+                    {active && (
+                      <div className="song-list">
+                        {songs.map((m) => (
+                          <div key={m.id} className="song-row"
+                            onClick={() => { handleUrlChange(m.description); setIsMenuOpen(false); setExpandedCat(null); }}>
+                            {m.title}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              {(() => {
+                const other = midiList.filter((m) => !categories.length ||
+                  !categories.some((c) =>
+                    (Array.isArray(m.categories) && m.categories.includes(c)) || m.categories_text === c
+                  ));
+                if (!other.length) return null;
+                const active = expandedCat === "__other__";
+                return (
+                  <div>
+                    <div className={`cat-row${active ? " active" : ""}`}
+                      style={{ color: "rgba(255,255,255,0.35)" }}
+                      onClick={() => setExpandedCat(active ? null : "__other__")}>
+                      <span>其他</span>
+                      <span className="cat-arrow">▶</span>
+                    </div>
+                    {active && (
+                      <div className="song-list">
+                        {other.map((m) => (
+                          <div key={m.id} className="song-row"
+                            onClick={() => { handleUrlChange(m.description); setIsMenuOpen(false); setExpandedCat(null); }}>
+                            {m.title}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
         </div>
+        
+        
+          {/* 播放器顯示切換 */}
+          <div className={`show-btn${showMusic ? " on" : ""}`}
+            onClick={() => { setShowMusic(v => !v); drumKit.init(); }}
+            title={showMusic ? "隱藏播放器" : "顯示播放器"}
+            style={{ width: "auto", padding: "5px 12px", fontSize: "0.72rem", fontFamily: "monospace", letterSpacing: "0.05em" }}>
+            🎵 Music
+          </div>
       </div>
 
       {showMusic && (
