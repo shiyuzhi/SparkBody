@@ -98,6 +98,12 @@ export default function App() {
     setUserId(id);
     setMode("B");
     setIsConfirmed(true);
+
+    // ✅ [Logger Integration] 初始化自動紀錄器
+    if (window.AffectiveLogger) {
+      window.logger = new window.AffectiveLogger(id);
+    }
+    
     console.log(`[Session] userId=${id} mode=B`);
   };
 
@@ -159,6 +165,11 @@ export default function App() {
   };
 
   const resetSession = () => {
+    // ✅ [Logger Integration] 結束 Session 前強制送出剩餘數據
+    if (window.logger) {
+      window.logger.flush();
+    }
+
     flushImmediately().catch(e => console.error("Flush failed:", e));
     const id = generateNextUserId();
     setCurrentUserId(id);
@@ -275,7 +286,21 @@ export default function App() {
       {/* ✅ Fireworks - 核心組件，不延後加載 */}
       {/* ✅ INP 優化：傳遞 Ref 而不是 Props，避免組件重新渲染 */}
       <Fireworks poseDataRef={poseDataRef} gestureDataRef={gestureDataRef} isLowEnd={isLowEnd} showDebug={showDebug}
-        mode={`B-${sessionKey}`} onLMAUpdate={(lma) => { lmaDataRef.current = lma; }}
+        mode={`B-${sessionKey}`} 
+        onLMAUpdate={(lma) => { 
+          lmaDataRef.current = lma; 
+          // ✅ [Logger Integration] 紀錄動作數據
+          if (window.logger && lma) {
+            window.logger.log({
+              mode: `B-${sessionKey}`,
+              shape: lma.shape ? Number(lma.shape).toFixed(3) : 0,
+              weight: lma.weight ? Number(lma.weight).toFixed(3) : 0,
+              flow: lma.flow ? Number(lma.flow).toFixed(3) : 0,
+              kt: lma.kt ? Number(lma.kt).toFixed(3) : 0,
+              activity: "body_movement"
+            });
+          }
+        }}
         onFrameReady={(canvas) => frameCallbackRef.current?.(canvas)} />
 
       <DraggableSkeleton scale={skeletonScale} visible={showSkeleton} onHide={() => setShowSkeleton(false)}
