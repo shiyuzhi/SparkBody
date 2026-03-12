@@ -1,18 +1,28 @@
 // App.jsx
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef, Suspense, lazy } from "react";
 import "bootstrap/dist/css/bootstrap.min.css";
 import DraggableSkeleton from "./DraggableSkeleton";
-import DraggableYouTube from "./DraggableyouTube";
 import PoseSkeleton from "./PoseSkeleton";
 import Fireworks from "./Fireworks";
 import { drumKit } from "./Audio";
 import MouseFireworks from "./MouseFireworks";
-// ★ Logger 整合
 import { flushImmediately, setUserId, setMode, generateNextUserId, resetSessionId } from "./AffectiveLogger";
-import CanvasRecorder from "./Canvasrecorder";
+
+// ✅ Code Splitting - 延後加載重型組件
+const DraggableYouTube = lazy(() => import("./DraggableyouTube"));
+const CanvasRecorder = lazy(() => import("./Canvasrecorder"));
+
+// ✅ Suspense Fallback 組件
+const LoadingSpinner = () => (
+  <div style={{
+    width: "24px", height: "24px", borderRadius: "50%",
+    border: "2px solid rgba(255,255,255,0.2)",
+    borderTopColor: "rgba(0,220,255,0.6)",
+    animation: "spin 0.8s linear infinite"
+  }} />
+);
 
 export default function App() {
-  // -------------------- 狀態 --------------------
   const [showSkeleton, setShowSkeleton] = useState(true);
   const [skeletonScale, setSkeletonScale] = useState(1);
   const [poseData, setPoseData] = useState(null);
@@ -20,95 +30,113 @@ export default function App() {
   const [showMusic, setShowMusic] = useState(false);
   const [videoId, setVideoId] = useState("4rgSzQwe5DQ");
   const [inputUrl, setInputUrl] = useState("https://youtu.be/4rgSzQwe5DQ");
-
   const [midiList, setMidiList] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [selectedCategory, setSelectedCategory] = useState("");
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [expandedCat, setExpandedCat] = useState(null);
-
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   const [windowHeight, setWindowHeight] = useState(window.innerHeight);
-
   const [isLowEnd, setIsLowEnd] = useState(() => {
     const isWeakCPU = navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2;
     const isIOSChrome = /CriOS/i.test(navigator.userAgent);
     const isSmallScreen = window.innerWidth < 600;
     return isWeakCPU || isIOSChrome || isSmallScreen;
   });
-
   const [showDebug, setShowDebug] = useState(false);
-
-  // 受試者管理
   const [currentUserId, setCurrentUserId] = useState("");
   const [isConfirmed, setIsConfirmed] = useState(false);
   const [sessionKey, setSessionKey] = useState(0);
-  // 同步狀態
-  const [syncState, setSyncState] = useState({ status: 'IDLE', pendingCount: 0, isOffline: false });
+  const [syncState, setSyncState] = useState({ status: "IDLE", pendingCount: 0, isOffline: false });
+  
+  // ✅ 橫向遊玩提示
+  const [showLandscapeHint, setShowLandscapeHint] = useState(true);
+  
   const skeletonCanvasRef = useRef(null);
   const lmaDataRef = useRef(null);
+  const frameCallbackRef = useRef(null); // CanvasRecorder 的 onFrame，由 Fireworks 驅動
 
-  // -------------------- memo 化 Fireworks 用 poseData --------------------
+  // ✅ 策略 C：分離偵測邏輯 - 使用 Ref 減少重新渲染
+  const poseDataRef = useRef(null);
+  const gestureDataRef = useRef(null);
+
+  // ✅ 計算式 - 需要在 useEffect 之前定義
+  const isLandscapePhone = windowHeight < 500;
+
+  // 當 poseData 改變時，只更新 Ref（不觸發 App 重新渲染）
+  useEffect(() => {
+    poseDataRef.current = poseData;
+  }, [poseData]);
+
+  useEffect(() => {
+    gestureDataRef.current = gestureData;
+  }, [gestureData]);
+
+  // ✅ 橫向遊玩提示 - 只在手機顯示，5 秒後自動消失
+  useEffect(() => {
+    const isMobileDevice = windowWidth < 600; // ✅ 直接計算，不依賴 isMobile
+    if (showLandscapeHint && isMobileDevice) {
+      const timer = setTimeout(() => {
+        setShowLandscapeHint(false);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [showLandscapeHint, windowWidth]);
+
   const fireworksPose = useMemo(() => {
     if (!poseData) return null;
     return {
       ...poseData,
       leftHandGesture: gestureData?.[0]?.[0]?.categoryName || "None",
-      rightHandGesture: gestureData?.[1]?.[0]?.categoryName || "None"
+      rightHandGesture: gestureData?.[1]?.[0]?.categoryName || "None",
     };
   }, [poseData, gestureData]);
 
-  // -------------------- 受試者確認 --------------------
   const confirmUser = () => {
     const id = generateNextUserId();
     setCurrentUserId(id);
-    resetSessionId();   // ← 每位受試者產生新的 sessionId
+    resetSessionId();
     setUserId(id);
     setMode("B");
     setIsConfirmed(true);
     console.log(`[Session] userId=${id} mode=B`);
   };
 
-  // -------------------- 初始化 --------------------
   useEffect(() => {
-    // 解鎖 Audio
-    const handleUnlockAudio = () => {
-      drumKit.init();
-      window.removeEventListener("click", handleUnlockAudio);
-    };
+    const handleUnlockAudio = () => { drumKit.init(); window.removeEventListener("click", handleUnlockAudio); };
     window.addEventListener("click", handleUnlockAudio);
-
-    // 視窗 resize
-    const handleResize = () => {
-      setWindowWidth(window.innerWidth);
-      setWindowHeight(window.innerHeight);
-    };
+    const handleResize = () => { setWindowWidth(window.innerWidth); setWindowHeight(window.innerHeight); };
     window.addEventListener("resize", handleResize);
-
-    // Logger 狀態監聽
     const onLoggerStatus = (e) => setSyncState(e.detail);
     window.addEventListener("LMA_LOGGER_STATUS", onLoggerStatus);
 
-    // 讀取 MIDI categories
-    fetch('https://imuse.ncnu.edu.tw/Midi-library/api/categories')
-      .then(res => res.json())
-      .then(data => setCategories(Array.isArray(data) ? data : []))
-      .catch(err => console.error("Category Error:", err));
+    // ✅ 策略 D：延後加載 API 數據 - 非阻塞式加載
+    const loadApiData = () => {
+      fetch("https://imuse.ncnu.edu.tw/Midi-library/api/categories")
+        .then(res => res.json())
+        .then(data => setCategories(Array.isArray(data) ? data : []))
+        .catch(err => console.error("Category Error:", err));
 
-    // 讀取 MIDI 列表
-    fetch('https://imuse.ncnu.edu.tw/Midi-library/api/midis')
-      .then(res => res.json())
-      .then(data => {
-        const list = data.items || data || [];
-        setMidiList(list);
-        const params = new URLSearchParams(window.location.search);
-        const midiParam = params.get("midi");
-        if (midiParam) {
-          const matchMidi = list.find(m => m.title === midiParam);
-          if (matchMidi && matchMidi.description) handleUrlChange(matchMidi.description);
-        }
-      })
-      .catch(err => console.error("MIDI Error:", err));
+      fetch("https://imuse.ncnu.edu.tw/Midi-library/api/midis")
+        .then(res => res.json())
+        .then(data => {
+          const list = data.items || data || [];
+          setMidiList(list);
+          const params = new URLSearchParams(window.location.search);
+          const midiParam = params.get("midi");
+          if (midiParam) {
+            const matchMidi = list.find(m => m.title === midiParam);
+            if (matchMidi && matchMidi.description) handleUrlChange(matchMidi.description);
+          }
+        })
+        .catch(err => console.error("MIDI Error:", err));
+    };
+
+    // 使用 requestIdleCallback 延後加載（主線程閒置時執行）
+    if (window.requestIdleCallback) {
+      window.requestIdleCallback(loadApiData, { timeout: 2000 });
+    } else {
+      setTimeout(loadApiData, 500);
+    }
 
     return () => {
       window.removeEventListener("resize", handleResize);
@@ -117,22 +145,8 @@ export default function App() {
     };
   }, []);
 
-  // -------------------- 過濾 MIDI --------------------
-  const filteredMidiList = useMemo(() => {
-    if (!selectedCategory) return midiList;
-    return midiList.filter(midi => {
-      const isInArray = Array.isArray(midi.categories) && midi.categories.includes(selectedCategory);
-      const isMatchText = midi.categories_text === selectedCategory;
-      return isInArray || isMatchText;
-    });
-  }, [selectedCategory, midiList]);
-
-  const isLandscapePhone = windowHeight < 500;
-  const isMobile = windowWidth < 768;
-
-  // -------------------- URL 解析 --------------------
   const handleUrlChange = (e_or_url) => {
-    const url = typeof e_or_url === 'string' ? e_or_url : e_or_url.target.value;
+    const url = typeof e_or_url === "string" ? e_or_url : e_or_url.target.value;
     if (!url) return;
     setInputUrl(url);
     const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
@@ -144,8 +158,7 @@ export default function App() {
     }
   };
 
-  // -------------------- Session Reset --------------------
- const resetSession = () => {
+  const resetSession = () => {
     flushImmediately().catch(e => console.error("Flush failed:", e));
     const id = generateNextUserId();
     setCurrentUserId(id);
@@ -154,262 +167,364 @@ export default function App() {
     setMode("B");
     setIsConfirmed(true);
     setSessionKey(k => k + 1);
-};
-  // -------------------- 渲染 --------------------
+  };
+
+  const renderMusicPanel = () => (
+    <div className="music-panel">
+      {categories.map((cat) => {
+        const songs = midiList.filter((m) =>
+          (Array.isArray(m.categories) && m.categories.includes(cat)) || m.categories_text === cat
+        );
+        if (!songs.length) return null;
+        const active = expandedCat === cat;
+        return (
+          <div key={cat}>
+            <div className={`cat-row${active ? " active" : ""}`}
+              onClick={() => setExpandedCat(active ? null : cat)}>
+              <span>{cat}</span>
+              <span className="cat-arrow">▶</span>
+            </div>
+            {active && (
+              <div className="song-list">
+                {songs.map((m) => (
+                  <div key={m.id} className="song-row"
+                    onClick={() => { handleUrlChange(m.description); setIsMenuOpen(false); setExpandedCat(null); }}>
+                    {m.title}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+      {(() => {
+        const other = midiList.filter((m) =>
+          !categories.some((c) =>
+            (Array.isArray(m.categories) && m.categories.includes(c)) || m.categories_text === c
+          )
+        );
+        if (!other.length) return null;
+        const active = expandedCat === "__other__";
+        return (
+          <div>
+            <div className={`cat-row${active ? " active" : ""}`}
+              style={{ color: "rgba(255,255,255,0.35)" }}
+              onClick={() => setExpandedCat(active ? null : "__other__")}>
+              <span>其他</span>
+              <span className="cat-arrow">▶</span>
+            </div>
+            {active && (
+              <div className="song-list">
+                {other.map((m) => (
+                  <div key={m.id} className="song-row"
+                    onClick={() => { handleUrlChange(m.description); setIsMenuOpen(false); setExpandedCat(null); }}>
+                    {m.title}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+    </div>
+  );
+
   return (
     <div style={{ height: "100dvh", width: "100vw", backgroundColor: "black", overflow: "hidden", position: "relative" }}>
-      
 
-      {/* Fireworks & Skeleton */}
-       <Fireworks poseData={fireworksPose} isLowEnd={isLowEnd} showDebug={showDebug} mode={`B-${sessionKey}`} onLMAUpdate={(lma) => { lmaDataRef.current = lma; }} />
+      {/* ✅ 橫向遊玩提示 - 只在手機顯示，點按關閉或 5 秒後自動消失 */}
+      {showLandscapeHint && windowWidth < 600 && (
+        <div
+          onClick={() => setShowLandscapeHint(false)}
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            width: "100%",
+            height: "100%",
+            background: "rgba(0, 0, 0, 0.7)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 9999,
+            cursor: "pointer",
+            pointerEvents: "auto",
+            animation: "fadeInOut 5s ease-in-out forwards",
+          }}>
+          <div
+            style={{
+              textAlign: "center",
+              color: "#fff",
+              fontFamily: "monospace",
+              pointerEvents: "none",
+            }}>
+            <div style={{ fontSize: "2rem", marginBottom: "20px" }}>📱</div>
+            <div style={{ fontSize: "1.2rem", fontWeight: "bold", marginBottom: "10px" }}>
+              請橫向遊玩
+            </div>
+            <div style={{ fontSize: "0.9rem", opacity: 0.8, marginBottom: "20px" }}>
+              Landscape mode recommended
+            </div>
+            <div style={{ fontSize: "0.75rem", opacity: 0.6 }}>
+              點按任何位置關閉 / Tap to close
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ Fireworks - 核心組件，不延後加載 */}
+      {/* ✅ INP 優化：傳遞 Ref 而不是 Props，避免組件重新渲染 */}
+      <Fireworks poseDataRef={poseDataRef} gestureDataRef={gestureDataRef} isLowEnd={isLowEnd} showDebug={showDebug}
+        mode={`B-${sessionKey}`} onLMAUpdate={(lma) => { lmaDataRef.current = lma; }}
+        onFrameReady={(canvas) => frameCallbackRef.current?.(canvas)} />
 
       <DraggableSkeleton scale={skeletonScale} visible={showSkeleton} onHide={() => setShowSkeleton(false)}
-        width={isLandscapePhone ? windowHeight * 0.8 : 600} height={isLandscapePhone ? windowHeight * 0.8 : 600}
+        width={isLandscapePhone ? windowHeight * 0.8 : 600}
+        height={isLandscapePhone ? windowHeight * 0.8 : 600}
         initialPosition={isLandscapePhone ? { top: "5%", left: "15%" } : { top: "10%", left: "25%" }} transparent>
-        <PoseSkeleton onPoseUpdate={setPoseData} onGestureData={setGestureData} hideCanvas={!showSkeleton} isLowEnd={isLowEnd} skeletonCanvasRef={skeletonCanvasRef} lmaDataRef={lmaDataRef} showDebug={showDebug} />
+        <PoseSkeleton onPoseUpdate={setPoseData} onGestureData={setGestureData}
+          hideCanvas={!showSkeleton} isLowEnd={isLowEnd}
+          skeletonCanvasRef={skeletonCanvasRef} lmaDataRef={lmaDataRef} showDebug={showDebug} />
       </DraggableSkeleton>
-      <MouseFireworks isLowEnd={isLowEnd} />
 
-      {/* 底部工具列 */}
-      <div className="w-100 d-flex align-items-center px-3 px-md-4" style={{ background: "rgba(15,15,15,0.95)", borderTop: "1px solid #333", zIndex: 200, position: "absolute", bottom: 0, height: isLandscapePhone ? "50px" : "65px", paddingBottom: "env(safe-area-inset-bottom)" }}>
-        <div className="d-flex align-items-center gap-2" style={{ zIndex: 10, flexShrink: 0 }}>
-          <button className="btn btn-sm btn-info" onClick={() => { setShowSkeleton(!showSkeleton); drumKit.init(); }}>
-            <span className="d-none d-lg-inline">{showSkeleton ? "Hide Skeleton" : "Show Skeleton"}</span><span className="d-lg-none">💀</span>
+      {/* ✅ 鼠標 Fireworks - 低端模式不顯示 */}
+      {!isLowEnd && <MouseFireworks isLowEnd={isLowEnd} />}
+
+      {/* ── CSS ── */}
+      <style>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+
+        @keyframes fadeInOut {
+          0% { opacity: 1; }
+          80% { opacity: 1; }
+          100% { opacity: 0; }
+        }
+
+        .tb-sep { width:1px; height:24px; background:rgba(255,255,255,0.13); flex-shrink:0; }
+
+        .music-trigger {
+          display:flex; align-items:center; gap:6px;
+          padding:5px 12px; border-radius:6px; cursor:pointer;
+          background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.22);
+          color:#fff; font-size:0.8rem; font-family:monospace;
+          letter-spacing:0.05em; white-space:nowrap; user-select:none;
+          transition:background 0.15s, border-color 0.15s, box-shadow 0.15s;
+        }
+        .music-trigger:hover, .music-trigger.open {
+          background:rgba(255,255,255,0.12); border-color:rgba(255,255,255,0.5);
+          box-shadow:0 0 8px rgba(255,255,255,0.1);
+        }
+        .music-trigger .arr {
+          font-size:0.5rem; opacity:0.55; display:inline-block; transition:transform 0.2s;
+        }
+        .music-trigger.open .arr { transform:rotate(180deg); }
+
+        .music-panel {
+          position:absolute; bottom:calc(100% + 8px); right:0;
+          width:240px; max-height:52vh; background:#0d0d0d;
+          border:1px solid rgba(255,255,255,0.14); border-radius:8px;
+          box-shadow:0 -8px 32px rgba(0,0,0,0.9);
+          overflow-y:auto; overflow-x:hidden; z-index:1001;
+          scrollbar-width:thin; scrollbar-color:rgba(255,255,255,0.18) transparent;
+        }
+        .music-panel::-webkit-scrollbar { width:3px; }
+        .music-panel::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.18); border-radius:2px; }
+
+        .cat-row {
+          display:flex; align-items:center; justify-content:space-between;
+          padding:10px 14px; cursor:pointer; color:#ffc107;
+          font-size:0.82rem; font-family:monospace; user-select:none;
+          border-bottom:1px solid rgba(255,255,255,0.05); transition:background 0.12s;
+        }
+        .cat-row:hover { background:rgba(255,180,0,0.07); }
+        .cat-row.active { background:rgba(255,180,0,0.12); color:#ffd54f; }
+        .cat-arrow { font-size:0.5rem; opacity:0.45; display:inline-block; transition:transform 0.18s, opacity 0.18s; }
+        .cat-row.active .cat-arrow { transform:rotate(90deg); opacity:1; }
+
+        .song-list { border-left:2px solid rgba(255,180,0,0.22); }
+        .song-row {
+          padding:8px 12px 8px 16px; cursor:pointer;
+          color:rgba(0,210,255,0.8); font-size:0.78rem; font-family:monospace;
+          border-bottom:1px solid rgba(255,255,255,0.03);
+          transition:background 0.1s, color 0.1s, padding-left 0.12s;
+          white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+        }
+        .song-row:hover { background:rgba(0,220,255,0.07); color:#00e5ff; padding-left:20px; }
+
+        .show-btn {
+          display:flex; align-items:center; justify-content:center;
+          padding:5px 12px; border-radius:6px; cursor:pointer;
+          background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.18);
+          color:rgba(255,255,255,0.55); font-size:0.8rem; font-family:monospace;
+          white-space:nowrap; user-select:none; flex-shrink:0; transition:all 0.15s;
+        }
+        .show-btn:hover, .show-btn.on {
+          background:rgba(255,180,0,0.12); border-color:rgba(255,180,0,0.5);
+          color:#ffc107; box-shadow:0 0 6px rgba(255,180,0,0.18);
+        }
+
+        .feedback-btn {
+          display:flex; align-items:center; justify-content:center;
+          width:32px; height:32px; border-radius:50%; cursor:pointer; flex-shrink:0;
+          background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.13);
+          font-size:0.95rem; text-decoration:none; transition:all 0.18s;
+          animation:fb-pulse 3s ease-in-out infinite;
+        }
+        .feedback-btn:hover {
+          background:rgba(100,220,255,0.1); border-color:rgba(100,220,255,0.45);
+          box-shadow:0 0 10px rgba(100,220,255,0.2); transform:scale(1.1);
+        }
+        @keyframes fb-pulse {
+          0%,100% { box-shadow:0 0 0 0 rgba(100,220,255,0); }
+          50%      { box-shadow:0 0 0 4px rgba(100,220,255,0.1); }
+        }
+
+        .yt-input {
+          width:110px; font-size:0.72rem; padding:5px 8px;
+          background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.14);
+          border-radius:5px; color:#0ef; outline:none; font-family:monospace;
+        }
+        .yt-input::placeholder { color:rgba(0,220,255,0.4); }
+      `}</style>
+
+      {/* ── 底部工具列 ── */}
+      <div className="w-100 d-flex align-items-center px-3 px-md-4"
+        style={{ background: "rgba(15,15,15,0.95)", borderTop: "1px solid #333", zIndex: 200,
+          position: "absolute", bottom: 0,
+          height: isLandscapePhone ? "50px" : "65px",
+          paddingBottom: "env(safe-area-inset-bottom)" }}>
+
+        {/* 左側 */}
+        <div className="d-flex align-items-center gap-2" style={{ flexShrink: 0 }}>
+
+          {/* 群組1：骨架 */}
+          <button className="btn btn-sm btn-info"
+            style={{ fontSize: "0.7rem", padding: "3px 8px" }}
+            onClick={() => { setShowSkeleton(!showSkeleton); drumKit.init(); }}>
+            💀
           </button>
-          {!isLandscapePhone && <input type="range" min="0.3" max="2" step="0.1" value={skeletonScale} onChange={(e) => setSkeletonScale(parseFloat(e.target.value))} style={{ width: "60px" }} />}
-          <button className={`btn btn-sm ${isLowEnd ? 'btn-secondary' : 'btn-success'} d-none d-md-inline`} onClick={() => setIsLowEnd(!isLowEnd)} style={{ fontSize: "0.7rem", fontWeight: "bold" }}>{isLowEnd ? "🚀 Lite Mode (ON)" : "💎 High Performance"}</button>
+          {!isLandscapePhone && (
+            <input type="range" min="0.3" max="2" step="0.1" value={skeletonScale}
+              onChange={(e) => setSkeletonScale(parseFloat(e.target.value))}
+              style={{ width: "50px" }} />
+          )}
+          <button
+            className={`btn btn-sm ${isLowEnd ? "btn-secondary" : "btn-success"} d-none d-md-inline`}
+            style={{ fontSize: "0.65rem", fontWeight: "bold", padding: "3px 7px" }}
+            onClick={() => setIsLowEnd(!isLowEnd)}>
+            {isLowEnd ? "LITE" : "HD"}
+          </button>
 
-          {/* 受試者面板 */}
-          <div className="d-flex align-items-center gap-1">
-          <button onClick={confirmUser} style={{ background: isConfirmed ? "rgba(0,239,255,0.15)" : "rgba(255,100,100,0.2)", border: `1px solid ${isConfirmed ? "#0ef" : "#f66"}`, borderRadius: 6, padding: "4px 10px", color: isConfirmed ? "#0ef" : "#f88", fontSize: "0.7rem", cursor: "pointer", fontFamily: "monospace", whiteSpace: "nowrap" }}>
+          <div className="tb-sep" />
+
+          {/* 群組2：實驗管理 */}
+          <button onClick={confirmUser}
+            style={{ background: isConfirmed ? "rgba(0,239,255,0.15)" : "rgba(255,100,100,0.2)",
+              border: `1px solid ${isConfirmed ? "#0ef" : "#f66"}`, borderRadius: 6,
+              padding: "3px 8px", color: isConfirmed ? "#0ef" : "#f88",
+              fontSize: "0.65rem", cursor: "pointer", fontFamily: "monospace", whiteSpace: "nowrap" }}>
             {isConfirmed ? `👤 ${currentUserId}` : "Set Participant"}
           </button>
-          {isConfirmed && <button onClick={resetSession} className="btn btn-sm btn-outline-warning" style={{ fontSize: "0.6rem", padding: "2px 6px" }}>NEXT ▶</button>}
+          {isConfirmed && (
+            <button onClick={resetSession} className="btn btn-sm btn-outline-warning"
+              style={{ fontSize: "0.6rem", padding: "2px 5px" }}>
+              NEXT ▶
+            </button>
+          )}
+          <div onClick={() => setShowDebug(v => !v)}
+            style={{ background: showDebug ? "rgba(0,239,255,0.15)" : "rgba(255,255,255,0.05)",
+              border: `1px solid ${showDebug ? "#0ef" : "#444"}`, borderRadius: 6,
+              padding: "3px 7px", color: showDebug ? "#0ef" : "#555",
+              fontSize: "0.65rem", cursor: "pointer", fontFamily: "monospace" }}>
+            {showDebug ? "LMA ✓" : "LMA"}
           </div>
-            <div onClick={() => setShowDebug(v => !v)} style={{ background: showDebug ? "rgba(0,239,255,0.15)" : "rgba(255,255,255,0.05)", border: `1px solid ${showDebug ? "#0ef" : "#444"}`, borderRadius: 8, padding: "4px 8px", color: showDebug ? "#0ef" : "#555", fontSize: "0.65rem", cursor: "pointer", fontFamily: "monospace" }}>
-              {showDebug ? "LMA ✓" : "LMA"}
-            </div>
 
-          <CanvasRecorder
-            fireworksSelector="#fireworks-canvas"
-            skeletonCanvasRef={skeletonCanvasRef}
-            userId={currentUserId}
-          />
+          <div className="tb-sep" />
 
+          {/* ✅ 策略 A：Code Splitting - 延後加載錄影 */}
+          {!isLowEnd && (
+            <Suspense fallback={<LoadingSpinner />}>
+              <CanvasRecorder
+                skeletonCanvasRef={skeletonCanvasRef}
+                userId={currentUserId}
+                onRegisterFrameCallback={(cb) => { frameCallbackRef.current = cb; }}
+              />
+            </Suspense>
+          )}
         </div>
 
-        {/* 舞台標題 */}
-        <div className="position-absolute start-50 translate-middle-x text-center" style={{ pointerEvents: "none", display: windowWidth < 950 ? "none" : "block" }}>
-          <div className="text-light fw-bold" style={{ letterSpacing: "2px", whiteSpace: "nowrap", opacity: 0.7 }}>SPARKBODY STAGE</div>
-        </div>
+        {/* 中央標題 - 已移到主容器頂部作為 LCP 錨點 */}
 
-        {/* 點歌區 */}
-        <style>{`
-          .music-trigger {
-            display: flex; align-items: center; gap: 6px;
-            padding: 6px 14px; border-radius: 6px; cursor: pointer;
-            background: rgba(255,255,255,0.06);
-            border: 1px solid rgba(255,255,255,0.25);
-            color: #ffffff; font-size: 0.82rem; font-family: monospace;
-            letter-spacing: 0.05em; white-space: nowrap;
-            transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
-            user-select: none;
-          }
-          .music-trigger:hover, .music-trigger.open {
-            background: rgba(255,255,255,0.12);
-            border-color: rgba(255,255,255,0.55);
-            box-shadow: 0 0 8px rgba(255,255,255,0.12);
-          }
-          .music-trigger .arr {
-            font-size: 0.55rem; opacity: 0.6;
-            display: inline-block;
-            transition: transform 0.2s;
-          }
-          .music-trigger.open .arr { transform: rotate(180deg); }
-
-          .music-panel {
-            position: absolute; bottom: calc(100% + 8px); right: 0;
-            width: 240px; max-height: 52vh;
-            background: #0d0d0d;
-            border: 1px solid rgba(255,255,255,0.15);
-            border-radius: 8px;
-            box-shadow: 0 -8px 32px rgba(0,0,0,0.85), 0 0 0 1px rgba(255,255,255,0.03);
-            overflow-y: auto; overflow-x: hidden;
-            z-index: 1001;
-            scrollbar-width: thin;
-            scrollbar-color: rgba(255,255,255,0.2) transparent;
-          }
-          .music-panel::-webkit-scrollbar { width: 3px; }
-          .music-panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 2px; }
-
-          .cat-row {
-            display: flex; align-items: center; justify-content: space-between;
-            padding: 10px 14px; cursor: pointer;
-            color: #ffc107; font-size: 0.82rem; font-family: monospace;
-            letter-spacing: 0.04em; user-select: none;
-            border-bottom: 1px solid rgba(255,255,255,0.05);
-            transition: background 0.12s;
-          }
-          .cat-row:hover { background: rgba(255,180,0,0.07); }
-          .cat-row.active { background: rgba(255,180,0,0.12); color: #ffd54f; }
-          .cat-arrow {
-            font-size: 0.5rem; opacity: 0.5;
-            display: inline-block;
-            transition: transform 0.18s, opacity 0.18s;
-          }
-          .cat-row.active .cat-arrow { transform: rotate(90deg); opacity: 1; }
-
-          .song-list { border-left: 2px solid rgba(255,180,0,0.25); }
-          .song-row {
-            padding: 8px 12px 8px 16px; cursor: pointer;
-            color: rgba(0,210,255,0.8); font-size: 0.78rem; font-family: monospace;
-            border-bottom: 1px solid rgba(255,255,255,0.03);
-            transition: background 0.1s, color 0.1s, padding-left 0.12s;
-            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-          }
-          .song-row:hover {
-            background: rgba(0,220,255,0.07);
-            color: #00e5ff;
-            padding-left: 20px;
-          }
-          .show-btn {
-            display: flex; align-items: center; justify-content: center;
-            border-radius: 6px; cursor: pointer;
-            background: rgba(255,255,255,0.05);
-            border: 1px solid rgba(255,255,255,0.2);
-            color: rgba(255,255,255,0.6); font-size: 0.82rem;
-            font-family: monospace; padding: 6px 14px;
-            transition: all 0.15s; flex-shrink: 0; user-select: none;
-            white-space: nowrap;
-          }
-          .show-btn:hover, .show-btn.on {
-            background: rgba(255,180,0,0.12);
-            border-color: rgba(255,180,0,0.55);
-            color: #ffc107;
-            box-shadow: 0 0 6px rgba(255,180,0,0.2);
-          }
-          .feedback-btn {
-            display: flex; align-items: center; justify-content: center;
-            width: 34px; height: 34px; border-radius: 50%; cursor: pointer;
-            background: rgba(255,255,255,0.04);
-            border: 1px solid rgba(255,255,255,0.15);
-            font-size: 1rem; text-decoration: none;
-            transition: all 0.18s; flex-shrink: 0;
-            animation: feedback-pulse 3s ease-in-out infinite;
-          }
-          .feedback-btn:hover {
-            background: rgba(100,220,255,0.12);
-            border-color: rgba(100,220,255,0.5);
-            box-shadow: 0 0 10px rgba(100,220,255,0.25);
-            transform: scale(1.1);
-          }
-          @keyframes feedback-pulse {
-            0%, 100% { box-shadow: 0 0 0 0 rgba(100,220,255,0); }
-            50% { box-shadow: 0 0 0 4px rgba(100,220,255,0.12); }
-          }
-        `}</style>
-
+        {/* 右側：點歌區 */}
         <div className="ms-auto d-flex align-items-center gap-2"
           style={{ zIndex: 1000, position: "relative", flexShrink: 0 }}>
 
-          {/* 回饋表單按鈕 */}
+          {/* 回饋按鈕 */}
           <a href="https://forms.gle/fmD9XYixYHLLrjQP6" target="_blank" rel="noopener noreferrer"
-            className="feedback-btn" title="填寫回饋表單">
-            📮
-          </a>
-
+            className="feedback-btn" title="填寫回饋表單">📮</a>
 
           {/* YT URL 輸入框 */}
           <input type="text" value={inputUrl} onChange={handleUrlChange}
-            className="d-none d-md-block"
-            style={{ width: "110px", fontSize: "0.72rem", padding: "5px 8px",
-              background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.15)",
-              borderRadius: 5, color: "#0ef", outline: "none", fontFamily: "monospace" }}
+            className="yt-input d-none d-md-block"
             placeholder="貼上 YouTube 連結" />
 
-        
           {/* 點歌觸發器 */}
           <div className={`music-trigger${isMenuOpen ? " open" : ""}`}
             onClick={() => { setIsMenuOpen(v => !v); setExpandedCat(null); }}>
             <span>♩</span>
-            {!isMobile && <span>點歌</span>}
+            {windowWidth >= 768 && <span>點歌</span>}
             <span className="arr">▼</span>
           </div>
 
           {/* 下拉面板 */}
-          {isMenuOpen && (
-            <div className="music-panel">
-              {categories.map((cat) => {
-                const songs = midiList.filter((m) =>
-                  (Array.isArray(m.categories) && m.categories.includes(cat)) ||
-                  m.categories_text === cat
-                );
-                if (!songs.length) return null;
-                const active = expandedCat === cat;
-                return (
-                  <div key={cat}>
-                    <div className={`cat-row${active ? " active" : ""}`}
-                      onClick={() => setExpandedCat(active ? null : cat)}>
-                      <span>{cat}</span>
-                      <span className="cat-arrow">▶</span>
-                    </div>
-                    {active && (
-                      <div className="song-list">
-                        {songs.map((m) => (
-                          <div key={m.id} className="song-row"
-                            onClick={() => { handleUrlChange(m.description); setIsMenuOpen(false); setExpandedCat(null); }}>
-                            {m.title}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-              {(() => {
-                const other = midiList.filter((m) => !categories.length ||
-                  !categories.some((c) =>
-                    (Array.isArray(m.categories) && m.categories.includes(c)) || m.categories_text === c
-                  ));
-                if (!other.length) return null;
-                const active = expandedCat === "__other__";
-                return (
-                  <div>
-                    <div className={`cat-row${active ? " active" : ""}`}
-                      style={{ color: "rgba(255,255,255,0.35)" }}
-                      onClick={() => setExpandedCat(active ? null : "__other__")}>
-                      <span>其他</span>
-                      <span className="cat-arrow">▶</span>
-                    </div>
-                    {active && (
-                      <div className="song-list">
-                        {other.map((m) => (
-                          <div key={m.id} className="song-row"
-                            onClick={() => { handleUrlChange(m.description); setIsMenuOpen(false); setExpandedCat(null); }}>
-                            {m.title}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-            </div>
-          )}
-        </div>
-        
-        
-          {/* 播放器顯示切換 */}
+          {isMenuOpen && renderMusicPanel()}
+
+          {/* 播放器開關 */}
           <div className={`show-btn${showMusic ? " on" : ""}`}
-            onClick={() => { setShowMusic(v => !v); drumKit.init(); }}
-            title={showMusic ? "隱藏播放器" : "顯示播放器"}
-            style={{ width: "auto", padding: "5px 12px", fontSize: "0.72rem", fontFamily: "monospace", letterSpacing: "0.05em" }}>
+            onClick={() => { setShowMusic(v => !v); drumKit.init(); }}>
             🎵 Music
           </div>
+
+        </div>
       </div>
 
+      {/* ✅ 策略 B：LCP 標題 - 在工具列下方最底部 */}
+      {windowWidth >= 950 && (
+        <div
+          className="text-center"
+          style={{
+            pointerEvents: "none",
+            position: "fixed",
+            bottom: "5px",
+            left: "50%",
+            transform: "translateX(-50%)",
+            whiteSpace: "nowrap",
+            zIndex: 201,
+          }}>
+          <div
+            className="text-light fw-bold"
+            style={{
+              letterSpacing: "2px",
+              opacity: 0.7,
+              fontSize: "0.85rem",
+              contentVisibility: "auto",
+            }}>
+            SPARKBODY STAGE
+          </div>
+        </div>
+      )}
+
+      {/* ✅ 策略 A：Code Splitting - 延後加載 YouTube */}
       {showMusic && (
-        <DraggableYouTube videoId={videoId} width={isLandscapePhone ? 240 : 320} height={isLandscapePhone ? 135 : 180} initialPosition={{ top: 20, left: windowWidth - (isLandscapePhone ? 260 : 340) }} />
+        <Suspense fallback={<LoadingSpinner />}>
+          <DraggableYouTube videoId={videoId}
+            width={isLandscapePhone ? 240 : 320}
+            height={isLandscapePhone ? 135 : 180}
+            initialPosition={{ top: 20, left: windowWidth - (isLandscapePhone ? 260 : 340) }} />
+        </Suspense>
       )}
     </div>
   );

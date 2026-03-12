@@ -96,17 +96,37 @@ function createBirdTemplate() {
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
-export default function Fireworks({ poseData, isLowEnd, showDebug = false, mode = "B", onLMAUpdate }) {
+// ✅ INP 優化版本：接收 Ref 而不是 Props，避免每秒 30 次重新渲染
+export default function Fireworks({ poseDataRef, gestureDataRef, isLowEnd, showDebug = false, mode = "B", onLMAUpdate, onFrameReady }) {
   const canvasRef    = useRef(null);
   const debugRef     = useRef(null);  // overlay div
   const particles    = useRef([]);
-  const latestPose   = useRef(poseData);
   const lmaRef       = useRef(null);  // ← 最新 LMA 計算結果
   const baselineLoggedRef = useRef(false);
   const lastContinuousLogTime = useRef(Date.now());
   const lastVictoryLogTime = useRef({ left: 0, right: 0 });
+  const onFrameReadyRef = useRef(onFrameReady);
+  useEffect(() => { onFrameReadyRef.current = onFrameReady; }, [onFrameReady]);
+  
+  // ✅ isLowEnd / showDebug 改用 Ref，避免切換時重新初始化整個 RAF
+  const isLowEndRef = useRef(isLowEnd);
+  const pendingLowEndRef = useRef(null); // null = 無待切換，true/false = 待切換目標值
 
-  useEffect(() => { latestPose.current = poseData; }, [poseData]);
+  useEffect(() => {
+    const next = isLowEnd;
+    const curr = isLowEndRef.current;
+    if (next === curr) return;
+    if (!next) {
+      // LITE → HD：先清粒子，下一幀 render loop 裡再正式切換
+      pendingLowEndRef.current = false;
+    } else {
+      // HD → LITE：直接切，粒子少不會爆量
+      isLowEndRef.current = true;
+    }
+  }, [isLowEnd]);
+
+  const showDebugRef = useRef(showDebug);
+  useEffect(() => { showDebugRef.current = showDebug; }, [showDebug]);
 
   // Mode 切換 → 重設 LMA baseline（避免 Mode A 的 baseline 污染 Mode B）
   useEffect(() => {
@@ -160,14 +180,14 @@ export default function Fireworks({ poseData, isLowEnd, showDebug = false, mode 
     const createSmallHeart = (centerX, centerY) => {
       const pan = (centerX / canvas.width) * 2 - 1;
       drumKit.play("boom", { volume: 0.3, detune: 600, pan });
-      const numPoints = isLowEnd ? 20 : 40;
+      const numPoints = isLowEndRef.current ? 10 : 40;
       const scale = 5; const offsetY = centerY - 80;
       for (let i = 0; i < numPoints; i++) {
         const t       = (i / numPoints) * Math.PI * 2;
         const xOffset = scale * (16 * Math.pow(Math.sin(t), 3));
         const yOffset = -scale * (13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t));
         const color = i % 2 === 0 ? "#ff4d4d" : "#ff85a2";
-        const p = new Particle(centerX + xOffset, offsetY + yOffset, color, "heart", isLowEnd);
+        const p = new Particle(centerX + xOffset, offsetY + yOffset, color, "heart", isLowEndRef.current);
         p.vx = (Math.random() - 0.5) * 0.5; p.vy = (Math.random() - 0.5) * 0.5;
         particles.current.push(p);
       }
@@ -177,6 +197,13 @@ export default function Fireworks({ poseData, isLowEnd, showDebug = false, mode 
 
     // ── Render loop ──────────────────────────────────────────────────────────
     const render = () => {
+      // LITE → HD 延遲切換：等粒子陣列清空後才正式切換
+      if (pendingLowEndRef.current === false) {
+        particles.current = [];
+        isLowEndRef.current = false;
+        pendingLowEndRef.current = null;
+      }
+
       if (canvas.width !== canvas.clientWidth || canvas.height !== canvas.clientHeight) {
         canvas.width = canvas.clientWidth; canvas.height = canvas.clientHeight;
       }
@@ -184,10 +211,10 @@ export default function Fireworks({ poseData, isLowEnd, showDebug = false, mode 
       if (w === 0 || h === 0) { raf = requestAnimationFrame(render); return; }
 
       ctx.globalCompositeOperation = "source-over";
-      ctx.fillStyle = isLowEnd ? "rgba(0,0,0,0.3)" : "rgba(0,0,0,0.15)";
+      ctx.fillStyle = isLowEndRef.current ? "rgba(0,0,0,0.35)" : "rgba(0,0,0,0.15)";
       ctx.fillRect(0, 0, w, h);
 
-      const currentPose = latestPose.current;
+      const currentPose = poseDataRef.current;
 
       // 第一道防線：兩隻手都不見才跳過（支援單手互動）
       const hasLeftHand  = currentPose?.leftHand  && currentPose.leftHand.visibility  > 0.5;
@@ -243,7 +270,7 @@ export default function Fireworks({ poseData, isLowEnd, showDebug = false, mode 
         const pan = (x / w) * 2 - 1;
 
         // 常態粒子發散
-        particles.current.push(new Particle(x, y, color, "normal", isLowEnd));
+        particles.current.push(new Particle(x, y, color, "normal", isLowEndRef.current));
 
         // --- 手勢邏輯判定區 (修正為互斥結構) ---
         if (gesture === "Victory") {
@@ -256,9 +283,9 @@ export default function Fireworks({ poseData, isLowEnd, showDebug = false, mode 
             lastVictoryLogTime.current[sideKey] = now;
           }
 
-          for (let i = 0; i < (isLowEnd ? 1 : 3); i++) {
+          for (let i = 0; i < (isLowEndRef.current ? 1 : 3); i++) {
             const rayColor = i % 2 === 0 ? "#FFF" : "#00FFFF";
-            const p = new Particle(x, y, rayColor, "ray", isLowEnd);
+            const p = new Particle(x, y, rayColor, "ray", isLowEndRef.current);
             const a = Math.random() * Math.PI * 2;
             p.vx = Math.cos(a) * 10; p.vy = Math.sin(a) * 10;
             particles.current.push(p);
@@ -283,8 +310,8 @@ export default function Fireworks({ poseData, isLowEnd, showDebug = false, mode 
             const explosionColor = status.current[side + "Color"];
             drumKit.play("boom", { volume: 0.6, detune: 0, pan });
             
-            for (let i = 0; i < (isLowEnd ? 15 : 40); i++) {
-              particles.current.push(new Particle(x, y, explosionColor, "explosion", isLowEnd));
+          for (let i = 0; i < (isLowEndRef.current ? 8 : 40); i++) {
+              particles.current.push(new Particle(x, y, explosionColor, "explosion", isLowEndRef.current));
             }
 
             log("Fireworks_Explosion", side);
@@ -357,9 +384,9 @@ export default function Fireworks({ poseData, isLowEnd, showDebug = false, mode 
             const birdX = (1 - (leftHand.x + rightHand.x) / 2) * w;
             const birdY = ((leftHand.y + rightHand.y) / 2) * h;
             const tmpl = birdTemplate.current;
-            for (let i = 0; i < tmpl.length; i += (isLowEnd ? 4 : 2)) {
+            for (let i = 0; i < tmpl.length; i += (isLowEndRef.current ? 8 : 2)) {
               const item = tmpl[i];
-              const p = new Particle(birdX + item.baseX * 0.9, birdY + item.baseY * 0.9, item.color, "normal", isLowEnd);
+              const p = new Particle(birdX + item.baseX * 0.9, birdY + item.baseY * 0.9, item.color, "normal", isLowEndRef.current);
               p.vx = item.baseX * 0.005; p.vy = -0.8; p.decay = 0.015; p.friction = 0.995; p.size = 1.6;
               particles.current.push(p);
             }
@@ -371,15 +398,16 @@ export default function Fireworks({ poseData, isLowEnd, showDebug = false, mode 
       [leftKnee, rightKnee].forEach((knee, i) => {
         if (knee?.visibility > 0.3) {
           const kneeColor = i === 0 ? "#00FF00" : "#FF8C00";
-          particles.current.push(new Particle((1 - knee.x) * w, knee.y * h, kneeColor, "normal", isLowEnd));
+          particles.current.push(new Particle((1 - knee.x) * w, knee.y * h, kneeColor, "normal", isLowEndRef.current));
         }
       });
 
-      // 粒子上限
-      const maxP = isLowEnd ? 400 : 1000;
+      // 粒子上限（低端激進降級：400 → 150，削減 62.5%）
+      const maxP = isLowEndRef.current ? 150 : 1000;
       if (particles.current.length > maxP)
         particles.current.splice(0, particles.current.length - maxP);
 
+      // ── 粒子繪製（Particle.draw() 內部已根據 p.isLowEnd 分支處理）─────────
       for (let i = particles.current.length - 1; i >= 0; i--) {
         const p = particles.current[i];
         p.update();
@@ -420,7 +448,7 @@ export default function Fireworks({ poseData, isLowEnd, showDebug = false, mode 
         ctx.fillStyle = rightG !== "None" && rightG !== "Lost" ? "#00e5ff" : "#555";
         ctx.fillText(rightG, 115, panelY + 42);
 
-        if (showDebug && lmaRef.current) {
+        if (showDebugRef.current && lmaRef.current) {
           const lma = lmaRef.current;
           const lmaX = 15;
           const lmaW = 260, lmaH2 = 175;
@@ -475,13 +503,16 @@ export default function Fireworks({ poseData, isLowEnd, showDebug = false, mode 
         }
       }
 
+      // 通知 CanvasRecorder 這一幀已畫完，可以合成錄影
+      onFrameReadyRef.current?.(canvas);
+
       raf = requestAnimationFrame(render);
     };
 
     render();
     return () => cancelAnimationFrame(raf);
-  }, [isLowEnd, showDebug, mode]);
-
+  }, [mode]); // ✅ 只依賴 mode，不依賴 isLowEnd/showDebug（改用 Ref）
+  
  return (
     <>
       <canvas

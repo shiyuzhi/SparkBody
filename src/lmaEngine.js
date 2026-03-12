@@ -2,7 +2,7 @@
 
 const CFG = {
   EMA_ALPHA:       0.15,
-  BASELINE_FRAMES: 300,
+  BASELINE_FRAMES: 150,
   MAX_JERK:        0.025,
   MAX_TELEPORT:    0.15,   //  新增：防止座標跳轉的閾值 (150px 或 0.15 視座標系而定)
   MIN_VISIBILITY:  0.5     //  新增：更嚴格的追蹤檢查
@@ -32,8 +32,8 @@ function ema(key, raw) {
 function buildBaseline(s, w, f) {
   if (_bl.ready) return;
   
-  // 【防呆】如果動作太小（像在發呆），就不計入 Baseline，避免 mean 被拉低
-  if (w < 0.001 && f > 0.95) return; // 靜止判定：無重量感且極度流暢 = 發呆
+  // 【防呆】完全靜止才過濾（受試者跳舞時幾乎不會觸發）
+  if (w < 0.0005 && f > 0.98) return;
 
   _bl.buf.shape.push(s);
   _bl.buf.weight.push(w);
@@ -41,8 +41,11 @@ function buildBaseline(s, w, f) {
   
   if (_bl.buf.shape.length >= CFG.BASELINE_FRAMES) {
     const stat = (arr) => {
-      const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
-      const std  = Math.sqrt(arr.reduce((a, b) => a + (b - mean) ** 2, 0) / arr.length) || 1e-6;
+      const sorted = [...arr].sort((a, b) => a - b);
+      const trim = Math.floor(sorted.length * 0.1);
+      const sub = sorted.slice(trim, sorted.length - trim);
+      const mean = sub.reduce((a, b) => a + b, 0) / sub.length;
+      const std  = Math.sqrt(sub.reduce((a, b) => a + (b - mean) ** 2, 0) / sub.length) || 1e-6;
       return { mean, std };
     };
     _bl.stats = { shape: stat(_bl.buf.shape), weight: stat(_bl.buf.weight), flow: stat(_bl.buf.flow) };
