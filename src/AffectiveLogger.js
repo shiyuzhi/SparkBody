@@ -1,4 +1,6 @@
+// AffectiveLogger.js - ✅ 完整修正版本
 // ⚠️ 重要：將下面的 SCRIPT_URL 換成你最新部署後的 URL
+
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyOFIDOoDRgOdqiprotV3etzeEHPulmPZlhcrAEnHa_1OcugfzohrP5t0gcPTF8hbZfHA/exec";
 
 class AffectiveLogger {
@@ -12,7 +14,7 @@ class AffectiveLogger {
 
         // 每 2 秒檢查一次是否需要補送資料
         setInterval(() => this.checkFlush(), 2000);
-        console.log("[Logger] 初始化成功, User:", this.userId);
+        console.log("[Logger] 初始化成功, User:", this.userId, "SessionId:", this.sessionId);
     }
 
     generateSessionId() {
@@ -29,6 +31,7 @@ class AffectiveLogger {
         };
 
         this.buffer.push(logEntry);
+        console.log("[Logger] 記錄數據，buffer 現在有", this.buffer.length, '筆');
 
         // 滿 50 筆立刻送出
         if (this.buffer.length >= this.batchSize) {
@@ -37,7 +40,10 @@ class AffectiveLogger {
     }
 
     async flush() {
-        if (this.buffer.length === 0) return;
+        if (this.buffer.length === 0) {
+            console.log("[Logger] buffer 為空，無須發送");
+            return;
+        }
 
         const dataToSent = {
             batch: [...this.buffer]
@@ -49,6 +55,8 @@ class AffectiveLogger {
         this.lastFlushTime = Date.now();
 
         try {
+            console.log("[Logger] 準備發送", currentBatchSize, '筆數據到 Google Apps Script');
+            
             // 重要：不帶自定義 headers 以避開 CORS 預檢
             await fetch(SCRIPT_URL, {
                 method: "POST",
@@ -56,6 +64,7 @@ class AffectiveLogger {
                 cache: "no-cache",
                 body: JSON.stringify(dataToSent)
             });
+            
             console.log(`✅ [Logger] 成功發送 ${currentBatchSize} 筆數據`);
             
             // 發送成功狀態事件
@@ -76,20 +85,39 @@ class AffectiveLogger {
 
     checkFlush() {
         if (this.buffer.length > 0 && (Date.now() - this.lastFlushTime) > this.flushInterval) {
+            console.log("[Logger] checkFlush: 時間已到，準備發送");
             this.flush();
         }
     }
 }
 
 // ============================================================================
-// 🆕 導出函數供 React 使用 - 這是修正的關鍵部分！
+// 🆕 全局狀態管理 - 供 React 使用
 // ============================================================================
-
-window.AffectiveLogger = AffectiveLogger;
 
 let currentLogger = null;
 let currentUserId = "anonymous";
 let currentMode = "A";
+
+/**
+ * 初始化全局 logger
+ */
+export function initLogger(userId) {
+    if (!currentLogger) {
+        currentLogger = new AffectiveLogger(userId);
+        window.logger = currentLogger; // 也掛到 window 上
+        currentUserId = userId;
+        console.log("[Logger] initLogger: 已初始化，userId =", userId);
+    }
+    return currentLogger;
+}
+
+/**
+ * 獲取當前 logger 實例
+ */
+export function getLogger() {
+    return currentLogger;
+}
 
 /**
  * 設置當前用戶 ID
@@ -123,11 +151,12 @@ export function resetSessionId() {
 /**
  * 立即發送緩衝區中的數據
  */
-export function flushImmediately() {
+export async function flushImmediately() {
     if (currentLogger) {
-        console.log("[Logger] flushImmediately called");
+        console.log("[Logger] flushImmediately 被調用");
         return currentLogger.flush();
     }
+    console.warn("[Logger] flushImmediately: logger 未初始化");
     return Promise.resolve();
 }
 
@@ -141,24 +170,7 @@ export function generateNextUserId() {
 }
 
 /**
- * 初始化全局 logger
- */
-export function initLogger(userId) {
-    currentLogger = new AffectiveLogger(userId);
-    currentUserId = userId;
-    console.log("[Logger] initLogger initialized for:", userId);
-    return currentLogger;
-}
-
-/**
- * 獲取當前 logger 實例
- */
-export function getLogger() {
-    return currentLogger;
-}
-
-/**
- * 記錄活動
+ * 記錄活動（使用當前 mode）
  */
 export function logActivity(activityData) {
     if (currentLogger) {
@@ -167,6 +179,25 @@ export function logActivity(activityData) {
             ...activityData
         });
     } else {
-        console.warn("[Logger] Logger not initialized, please call initLogger() first");
+        console.warn("[Logger] logActivity: logger 未初始化，無法記錄");
     }
 }
+
+// ============================================================================
+// ✅ 兼容全局引用 - 掛到 window 上
+// ============================================================================
+
+window.AffectiveLogger = AffectiveLogger;
+window.initLogger = initLogger;
+window.getLogger = getLogger;
+window.setUserId = setUserId;
+window.setMode = setMode;
+window.resetSessionId = resetSessionId;
+window.flushImmediately = flushImmediately;
+window.generateNextUserId = generateNextUserId;
+window.logActivity = logActivity;
+
+// ✅ 同時支持 ES6 module 導出
+export { AffectiveLogger };
+
+console.log("[Logger] ✅ AffectiveLogger.js 已加載，所有導出函數已掛到 window");
