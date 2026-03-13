@@ -1,6 +1,6 @@
-// AffectiveLogger.js - ✅ 完整修正版本（Vite 適配）
+// AffectiveLogger.js - ✅ 完整修正版本（Vite 適配 + 新部署 URL）
 
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyOFIDOoDRgOdqiprotV3etzeEHPulmPZlhcrAEnHa_1OcugfzohrP5t0gcPTF8hbZfHA/exec";
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxBIcQE1mwSeBDYcdAFYfmVhoshNRxlLPdPlFasulCwKoziAS0StsAW88VPekc0NJbWxA/exec";
 
 class AffectiveLogger {
     constructor(userId) {
