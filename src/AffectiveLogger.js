@@ -1,3 +1,4 @@
+// ⚠️ 重要：將下面的 SCRIPT_URL 換成你最新部署後的 URL
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyOFIDOoDRgOdqiprotV3etzeEHPulmPZlhcrAEnHa_1OcugfzohrP5t0gcPTF8hbZfHA/exec";
 
 class AffectiveLogger {
@@ -56,10 +57,20 @@ class AffectiveLogger {
                 body: JSON.stringify(dataToSent)
             });
             console.log(`✅ [Logger] 成功發送 ${currentBatchSize} 筆數據`);
+            
+            // 發送成功狀態事件
+            window.dispatchEvent(new CustomEvent("LMA_LOGGER_STATUS", {
+                detail: { status: "SUCCESS", pendingCount: this.buffer.length, isOffline: false }
+            }));
         } catch (error) {
             console.error("❌ [Logger] 發送失敗:", error);
             // 失敗時將資料塞回緩衝區
             this.buffer = dataToSent.batch.concat(this.buffer);
+            
+            // 發送錯誤狀態事件
+            window.dispatchEvent(new CustomEvent("LMA_LOGGER_STATUS", {
+                detail: { status: "ERROR", pendingCount: this.buffer.length, isOffline: true }
+            }));
         }
     }
 
@@ -70,5 +81,92 @@ class AffectiveLogger {
     }
 }
 
-// 掛載到 window 確保全域可調用
+// ============================================================================
+// 🆕 導出函數供 React 使用 - 這是修正的關鍵部分！
+// ============================================================================
+
 window.AffectiveLogger = AffectiveLogger;
+
+let currentLogger = null;
+let currentUserId = "anonymous";
+let currentMode = "A";
+
+/**
+ * 設置當前用戶 ID
+ */
+export function setUserId(id) {
+    currentUserId = id;
+    if (currentLogger) {
+        currentLogger.userId = id;
+    }
+    console.log("[Logger] setUserId:", id);
+}
+
+/**
+ * 設置當前模式
+ */
+export function setMode(mode) {
+    currentMode = mode;
+    console.log("[Logger] setMode:", mode);
+}
+
+/**
+ * 重置 Session ID
+ */
+export function resetSessionId() {
+    if (currentLogger) {
+        currentLogger.sessionId = currentLogger.generateSessionId();
+        console.log("[Logger] resetSessionId:", currentLogger.sessionId);
+    }
+}
+
+/**
+ * 立即發送緩衝區中的數據
+ */
+export function flushImmediately() {
+    if (currentLogger) {
+        console.log("[Logger] flushImmediately called");
+        return currentLogger.flush();
+    }
+    return Promise.resolve();
+}
+
+/**
+ * 生成下一個用戶 ID
+ */
+export function generateNextUserId() {
+    const id = `user_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+    console.log("[Logger] generateNextUserId:", id);
+    return id;
+}
+
+/**
+ * 初始化全局 logger
+ */
+export function initLogger(userId) {
+    currentLogger = new AffectiveLogger(userId);
+    currentUserId = userId;
+    console.log("[Logger] initLogger initialized for:", userId);
+    return currentLogger;
+}
+
+/**
+ * 獲取當前 logger 實例
+ */
+export function getLogger() {
+    return currentLogger;
+}
+
+/**
+ * 記錄活動
+ */
+export function logActivity(activityData) {
+    if (currentLogger) {
+        currentLogger.log({
+            mode: currentMode,
+            ...activityData
+        });
+    } else {
+        console.warn("[Logger] Logger not initialized, please call initLogger() first");
+    }
+}
