@@ -164,13 +164,10 @@ export default function Fireworks({ poseDataRef, gestureDataRef, isLowEnd, showD
       if (!lma) return;
       logActivity({
         activity,
-        shape:    lma.shape,
-        weight:   lma.weight,
-        flow:     lma.flow,
-        kt:       lma.kt,
         shape_n:  lma.n.shape,
         weight_n: lma.n.weight,
         flow_n:   lma.n.flow,
+        kt:       lma.kt,
         baselineReady: lma.baselineReady,
         note,
       });

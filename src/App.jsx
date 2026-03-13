@@ -1,4 +1,4 @@
-// App.jsx - ✅ 完整修正版本
+// App.jsx
 import React, { useState, useEffect, useMemo, useRef, Suspense, lazy } from "react";
 import "bootstrap/dist/css/bootstrap.min.css";
 import DraggableSkeleton from "./DraggableSkeleton";
@@ -6,17 +6,7 @@ import PoseSkeleton from "./PoseSkeleton";
 import Fireworks from "./Fireworks";
 import { drumKit } from "./Audio";
 import MouseFireworks from "./MouseFireworks";
-
-// ✅ 正確的 AffectiveLogger 導入方式（包括 initLogger 和 getLogger）
-import { 
-    flushImmediately, 
-    setUserId, 
-    setMode, 
-    generateNextUserId, 
-    resetSessionId,
-    initLogger,
-    getLogger
-} from "./AffectiveLogger";
+import { flushImmediately, setUserId, setMode, generateNextUserId, resetSessionId } from "./AffectiveLogger";
 
 // ✅ Code Splitting - 延後加載重型組件
 const DraggableYouTube = lazy(() => import("./DraggableyouTube"));
@@ -101,7 +91,6 @@ export default function App() {
     };
   }, [poseData, gestureData]);
 
-  // ✅ 修正的 confirmUser 函數 - 使用導出的 initLogger
   const confirmUser = () => {
     const id = generateNextUserId();
     setCurrentUserId(id);
@@ -109,11 +98,7 @@ export default function App() {
     setUserId(id);
     setMode("B");
     setIsConfirmed(true);
-
-    // ✅ [Logger Integration] 使用導出的 initLogger 函數初始化
-    initLogger(id);
-    
-    console.log(`[Session] userId=${id} mode=B logger initialized`);
+    console.log(`[Session] userId=${id} mode=B`);
   };
 
   useEffect(() => {
@@ -173,14 +158,7 @@ export default function App() {
     }
   };
 
-  // ✅ 修正的 resetSession 函數 - 使用導出的 getLogger
   const resetSession = () => {
-    // ✅ [Logger Integration] 結束 Session 前強制送出剩餘數據
-    const logger = getLogger();
-    if (logger) {
-      logger.flush();
-    }
-
     flushImmediately().catch(e => console.error("Flush failed:", e));
     const id = generateNextUserId();
     setCurrentUserId(id);
@@ -219,228 +197,197 @@ export default function App() {
           </div>
         );
       })}
+      {(() => {
+        const other = midiList.filter((m) =>
+          !categories.some((c) =>
+            (Array.isArray(m.categories) && m.categories.includes(c)) || m.categories_text === c
+          )
+        );
+        if (!other.length) return null;
+        const active = expandedCat === "__other__";
+        return (
+          <div>
+            <div className={`cat-row${active ? " active" : ""}`}
+              style={{ color: "rgba(255,255,255,0.35)" }}
+              onClick={() => setExpandedCat(active ? null : "__other__")}>
+              <span>其他</span>
+              <span className="cat-arrow">▶</span>
+            </div>
+            {active && (
+              <div className="song-list">
+                {other.map((m) => (
+                  <div key={m.id} className="song-row"
+                    onClick={() => { handleUrlChange(m.description); setIsMenuOpen(false); setExpandedCat(null); }}>
+                    {m.title}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 
   return (
-    <div className="w-100 h-100 d-flex flex-column" style={{ background: "linear-gradient(135deg, rgba(15,15,40,0.98) 0%, rgba(20,10,50,0.96) 100%)", overflow: "hidden", position: "relative" }}>
+    <div style={{ height: "100dvh", width: "100vw", backgroundColor: "black", overflow: "hidden", position: "relative" }}>
 
-      {/* 🎆 Fireworks Canvas */}
-      {fireworksPose && !isLowEnd && (
-        <Fireworks
-          key={sessionKey}
-          canvasRef={skeletonCanvasRef}
-          poseData={fireworksPose}
-          isLandscapePhone={isLandscapePhone}
-          onFrameCallback={(cb) => { frameCallbackRef.current = cb; }}
-        />
-      )}
-
-      {/* 骨架 Canvas */}
-      <canvas
-        ref={skeletonCanvasRef}
-        style={{
-          position: "absolute",
-          top: 0,
-          left: 0,
-          width: "100%",
-          height: "100%",
-          display: showSkeleton ? "block" : "none",
-          zIndex: 50,
-          cursor: "crosshair",
-        }}
-      />
-
-      {/* 景深 UI 容器 */}
-      <div
-        style={{
-          position: "absolute",
-          top: 0,
-          left: 0,
-          width: "100%",
-          height: "100%",
-          display: "flex",
-          flexDirection: "column",
-          justifyContent: "space-between",
-          pointerEvents: "none",
-          zIndex: 100,
-        }}>
-        {/* 頂部：Debug */}
-        {showDebug && (
+      {/* ✅ 橫向遊玩提示 - 只在手機顯示，點按關閉或 5 秒後自動消失 */}
+      {showLandscapeHint && windowWidth < 600 && (
+        <div
+          onClick={() => setShowLandscapeHint(false)}
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            width: "100%",
+            height: "100%",
+            background: "rgba(0, 0, 0, 0.7)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 9999,
+            cursor: "pointer",
+            pointerEvents: "auto",
+            animation: "fadeInOut 5s ease-in-out forwards",
+          }}>
           <div
             style={{
-              pointerEvents: "auto",
-              background: "rgba(0,0,0,0.7)",
-              color: "#0ef",
-              fontSize: "0.75rem",
+              textAlign: "center",
+              color: "#fff",
               fontFamily: "monospace",
-              padding: "8px",
-              borderRadius: "4px",
-              margin: "8px",
-              maxHeight: "200px",
-              overflowY: "auto",
-              minWidth: "250px",
+              pointerEvents: "none",
             }}>
-            <div>FPS: {Math.round(1000 / 16.67)} | Pose: {poseData ? "✓" : "✗"}</div>
-            <div>Sync: {syncState.status} | Pending: {syncState.pendingCount}</div>
-            <div>UserId: {currentUserId}</div>
-            <div>Logger: {getLogger() ? "✓" : "✗"}</div>
-          </div>
-        )}
-      </div>
-
-      {/* 模態視窗 */}
-      {!isConfirmed && (
-        <div style={{
-          position: "fixed",
-          top: 0,
-          left: 0,
-          width: "100%",
-          height: "100%",
-          background: "rgba(0,0,0,0.8)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          zIndex: 2000,
-          backdropFilter: "blur(2px)"
-        }}>
-          <div style={{
-            background: "rgba(20,20,50,0.95)",
-            padding: "40px",
-            borderRadius: "12px",
-            textAlign: "center",
-            border: "1px solid rgba(0,220,255,0.3)",
-            boxShadow: "0 0 20px rgba(0,220,255,0.2)"
-          }}>
-            <h2 style={{ color: "#0ef", marginBottom: "20px", fontSize: "1.5rem" }}>
-              參與者確認
-            </h2>
-            <p style={{ color: "#aaa", marginBottom: "30px" }}>
-              點擊下方按鈕以設定參與者 ID
-            </p>
-            <button
-              onClick={confirmUser}
-              style={{
-                padding: "12px 32px",
-                fontSize: "1rem",
-                background: "linear-gradient(135deg, #00dcff 0%, #0088ff 100%)",
-                color: "#000",
-                border: "none",
-                borderRadius: "6px",
-                cursor: "pointer",
-                fontWeight: "bold",
-                boxShadow: "0 0 15px rgba(0,220,255,0.4)",
-                transition: "all 0.3s"
-              }}
-              onMouseEnter={(e) => {
-                e.target.style.boxShadow = "0 0 25px rgba(0,220,255,0.6)";
-                e.target.style.transform = "scale(1.05)";
-              }}
-              onMouseLeave={(e) => {
-                e.target.style.boxShadow = "0 0 15px rgba(0,220,255,0.4)";
-                e.target.style.transform = "scale(1)";
-              }}>
-              開始實驗
-            </button>
+            <div style={{ fontSize: "2rem", marginBottom: "20px" }}>📱</div>
+            <div style={{ fontSize: "1.2rem", fontWeight: "bold", marginBottom: "10px" }}>
+              請橫向遊玩
+            </div>
+            <div style={{ fontSize: "0.9rem", opacity: 0.8, marginBottom: "20px" }}>
+              Landscape mode recommended
+            </div>
+            <div style={{ fontSize: "0.75rem", opacity: 0.6 }}>
+              點按任何位置關閉 / Tap to close
+            </div>
           </div>
         </div>
       )}
 
-      {/* 樂景 hint */}
-      {showLandscapeHint && (
-        <div style={{
-          position: "fixed",
-          top: "50%",
-          left: "50%",
-          transform: "translate(-50%, -50%)",
-          background: "rgba(0,0,0,0.9)",
-          color: "#0ef",
-          padding: "20px 40px",
-          borderRadius: "8px",
-          textAlign: "center",
-          zIndex: 1500,
-          fontSize: "1rem",
-          fontFamily: "monospace",
-          animation: "fadeInOut 5s ease-in-out"
-        }}>
-          💡 建議橫向遊玩以獲得最佳體驗
-        </div>
-      )}
+      {/* ✅ Fireworks - 核心組件，不延後加載 */}
+      {/* ✅ INP 優化：傳遞 Ref 而不是 Props，避免組件重新渲染 */}
+      <Fireworks poseDataRef={poseDataRef} gestureDataRef={gestureDataRef} isLowEnd={isLowEnd} showDebug={showDebug}
+        mode={`B-${sessionKey}`} onLMAUpdate={(lma) => { lmaDataRef.current = lma; }}
+        onFrameReady={(canvas) => frameCallbackRef.current?.(canvas)} />
 
+      <DraggableSkeleton scale={skeletonScale} visible={showSkeleton} onHide={() => setShowSkeleton(false)}
+        width={isLandscapePhone ? windowHeight * 0.8 : 600}
+        height={isLandscapePhone ? windowHeight * 0.8 : 600}
+        initialPosition={isLandscapePhone ? { top: "5%", left: "15%" } : { top: "10%", left: "25%" }} transparent>
+        <PoseSkeleton onPoseUpdate={setPoseData} onGestureData={setGestureData}
+          hideCanvas={!showSkeleton} isLowEnd={isLowEnd}
+          skeletonCanvasRef={skeletonCanvasRef} lmaDataRef={lmaDataRef} showDebug={showDebug} />
+      </DraggableSkeleton>
+
+      {/* ✅ 鼠標 Fireworks - 低端模式不顯示 */}
+      {!isLowEnd && <MouseFireworks isLowEnd={isLowEnd} />}
+
+      {/* ── CSS ── */}
       <style>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+
         @keyframes fadeInOut {
-          0%   { opacity: 0; }
-          10%  { opacity: 1; }
-          90%  { opacity: 1; }
+          0% { opacity: 1; }
+          80% { opacity: 1; }
           100% { opacity: 0; }
         }
 
-        .music-panel {
-          position: fixed; bottom: 65px; right: 0;
-          width: 200px; height: calc(100vh - 130px);
-          background: rgba(15,15,20,0.96); border-left: 1px solid #333;
-          box-shadow: 0 -8px 32px rgba(0,0,0,0.9);
-          overflow-y: auto; overflow-x: hidden; z-index: 1001;
-          scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.18) transparent;
+        .tb-sep { width:1px; height:24px; background:rgba(255,255,255,0.13); flex-shrink:0; }
+
+        .music-trigger {
+          display:flex; align-items:center; gap:6px;
+          padding:5px 12px; border-radius:6px; cursor:pointer;
+          background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.22);
+          color:#fff; font-size:0.8rem; font-family:monospace;
+          letter-spacing:0.05em; white-space:nowrap; user-select:none;
+          transition:background 0.15s, border-color 0.15s, box-shadow 0.15s;
         }
-        .music-panel::-webkit-scrollbar { width: 3px; }
-        .music-panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.18); border-radius: 2px; }
+        .music-trigger:hover, .music-trigger.open {
+          background:rgba(255,255,255,0.12); border-color:rgba(255,255,255,0.5);
+          box-shadow:0 0 8px rgba(255,255,255,0.1);
+        }
+        .music-trigger .arr {
+          font-size:0.5rem; opacity:0.55; display:inline-block; transition:transform 0.2s;
+        }
+        .music-trigger.open .arr { transform:rotate(180deg); }
+
+        .music-panel {
+          position:absolute; bottom:calc(100% + 8px); right:0;
+          width:240px; max-height:52vh; background:#0d0d0d;
+          border:1px solid rgba(255,255,255,0.14); border-radius:8px;
+          box-shadow:0 -8px 32px rgba(0,0,0,0.9);
+          overflow-y:auto; overflow-x:hidden; z-index:1001;
+          scrollbar-width:thin; scrollbar-color:rgba(255,255,255,0.18) transparent;
+        }
+        .music-panel::-webkit-scrollbar { width:3px; }
+        .music-panel::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.18); border-radius:2px; }
 
         .cat-row {
-          display: flex; align-items: center; justify-content: space-between;
-          padding: 10px 14px; cursor: pointer; color: #ffc107;
-          font-size: 0.82rem; font-family: monospace; user-select: none;
-          border-bottom: 1px solid rgba(255,255,255,0.05); transition: background 0.12s;
+          display:flex; align-items:center; justify-content:space-between;
+          padding:10px 14px; cursor:pointer; color:#ffc107;
+          font-size:0.82rem; font-family:monospace; user-select:none;
+          border-bottom:1px solid rgba(255,255,255,0.05); transition:background 0.12s;
         }
-        .cat-row:hover { background: rgba(255,180,0,0.07); }
-        .cat-row.active { background: rgba(255,180,0,0.12); color: #ffd54f; }
-        .cat-arrow { font-size: 0.5rem; opacity: 0.45; display: inline-block; transition: transform 0.18s, opacity 0.18s; }
-        .cat-row.active .cat-arrow { transform: rotate(90deg); opacity: 1; }
+        .cat-row:hover { background:rgba(255,180,0,0.07); }
+        .cat-row.active { background:rgba(255,180,0,0.12); color:#ffd54f; }
+        .cat-arrow { font-size:0.5rem; opacity:0.45; display:inline-block; transition:transform 0.18s, opacity 0.18s; }
+        .cat-row.active .cat-arrow { transform:rotate(90deg); opacity:1; }
 
-        .song-list { border-left: 2px solid rgba(255,180,0,0.22); }
+        .song-list { border-left:2px solid rgba(255,180,0,0.22); }
         .song-row {
-          padding: 8px 12px 8px 16px; cursor: pointer;
-          color: rgba(0,210,255,0.8); font-size: 0.78rem; font-family: monospace;
-          border-bottom: 1px solid rgba(255,255,255,0.03);
-          transition: background 0.1s, color 0.1s, padding-left 0.12s;
-          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+          padding:8px 12px 8px 16px; cursor:pointer;
+          color:rgba(0,210,255,0.8); font-size:0.78rem; font-family:monospace;
+          border-bottom:1px solid rgba(255,255,255,0.03);
+          transition:background 0.1s, color 0.1s, padding-left 0.12s;
+          white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
         }
-        .song-row:hover { background: rgba(0,220,255,0.07); color: #00e5ff; padding-left: 20px; }
+        .song-row:hover { background:rgba(0,220,255,0.07); color:#00e5ff; padding-left:20px; }
 
         .show-btn {
-          display: flex; align-items: center; justify-content: center;
-          padding: 5px 12px; border-radius: 6px; cursor: pointer;
-          background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.18);
-          color: rgba(255,255,255,0.55); font-size: 0.8rem; font-family: monospace;
-          white-space: nowrap; user-select: none; flex-shrink: 0; transition: all 0.15s;
+          display:flex; align-items:center; justify-content:center;
+          padding:5px 12px; border-radius:6px; cursor:pointer;
+          background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.18);
+          color:rgba(255,255,255,0.55); font-size:0.8rem; font-family:monospace;
+          white-space:nowrap; user-select:none; flex-shrink:0; transition:all 0.15s;
         }
         .show-btn:hover, .show-btn.on {
-          background: rgba(255,180,0,0.12); border-color: rgba(255,180,0,0.5);
-          color: #ffc107; box-shadow: 0 0 6px rgba(255,180,0,0.18);
+          background:rgba(255,180,0,0.12); border-color:rgba(255,180,0,0.5);
+          color:#ffc107; box-shadow:0 0 6px rgba(255,180,0,0.18);
         }
 
         .feedback-btn {
-          display: flex; align-items: center; justify-content: center;
-          width: 32px; height: 32px; border-radius: 50%; cursor: pointer; flex-shrink: 0;
-          background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.13);
-          font-size: 0.95rem; text-decoration: none; transition: all 0.18s;
-          animation: fb-pulse 3s ease-in-out infinite;
+          display:flex; align-items:center; justify-content:center;
+          width:32px; height:32px; border-radius:50%; cursor:pointer; flex-shrink:0;
+          background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.13);
+          font-size:0.95rem; text-decoration:none; transition:all 0.18s;
+          animation:fb-pulse 3s ease-in-out infinite;
         }
         .feedback-btn:hover {
-          background: rgba(100,220,255,0.1); border-color: rgba(100,220,255,0.45);
-          box-shadow: 0 0 10px rgba(100,220,255,0.2); transform: scale(1.1);
+          background:rgba(100,220,255,0.1); border-color:rgba(100,220,255,0.45);
+          box-shadow:0 0 10px rgba(100,220,255,0.2); transform:scale(1.1);
         }
         @keyframes fb-pulse {
-          0%,100% { box-shadow: 0 0 0 0 rgba(100,220,255,0); }
-          50%      { box-shadow: 0 0 0 4px rgba(100,220,255,0.1); }
+          0%,100% { box-shadow:0 0 0 0 rgba(100,220,255,0); }
+          50%      { box-shadow:0 0 0 4px rgba(100,220,255,0.1); }
         }
 
         .yt-input {
-          width: 110px; font-size: 0.72rem; padding: 5px 8px;
-          background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.14);
-          border-radius: 5px; color: #0ef; outline: none; font-family: monospace;
+          width:110px; font-size:0.72rem; padding:5px 8px;
+          background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.14);
+          border-radius:5px; color:#0ef; outline:none; font-family:monospace;
         }
-        .yt-input::placeholder { color: rgba(0,220,255,0.4); }
+        .yt-input::placeholder { color:rgba(0,220,255,0.4); }
       `}</style>
 
       {/* ── 底部工具列 ── */}
@@ -471,7 +418,7 @@ export default function App() {
             {isLowEnd ? "LITE" : "HD"}
           </button>
 
-          <div className="tb-sep" style={{ width: "1px", height: "20px", background: "rgba(255,255,255,0.1)", margin: "0 5px" }} />
+          <div className="tb-sep" />
 
           {/* 群組2：實驗管理 */}
           <button onClick={confirmUser}
@@ -495,7 +442,7 @@ export default function App() {
             {showDebug ? "LMA ✓" : "LMA"}
           </div>
 
-          <div className="tb-sep" style={{ width: "1px", height: "20px", background: "rgba(255,255,255,0.1)", margin: "0 5px" }} />
+          <div className="tb-sep" />
 
           {/* ✅ 策略 A：Code Splitting - 延後加載錄影 */}
           {!isLowEnd && (
@@ -508,6 +455,8 @@ export default function App() {
             </Suspense>
           )}
         </div>
+
+        {/* 中央標題 - 已移到主容器頂部作為 LCP 錨點 */}
 
         {/* 右側：點歌區 */}
         <div className="ms-auto d-flex align-items-center gap-2"
@@ -524,23 +473,10 @@ export default function App() {
 
           {/* 點歌觸發器 */}
           <div className={`music-trigger${isMenuOpen ? " open" : ""}`}
-            onClick={() => { setIsMenuOpen(v => !v); setExpandedCat(null); }}
-            style={{
-              display: "flex", alignItems: "center", gap: "8px",
-              padding: "5px 12px", borderRadius: "6px", cursor: "pointer",
-              background: isMenuOpen ? "rgba(255,180,0,0.15)" : "rgba(255,255,255,0.05)",
-              border: `1px solid ${isMenuOpen ? "rgba(255,180,0,0.5)" : "rgba(255,255,255,0.18)"}`,
-              color: isMenuOpen ? "#ffc107" : "rgba(255,255,255,0.6)",
-              fontSize: "0.8rem", fontFamily: "monospace", whiteSpace: "nowrap",
-              transition: "all 0.15s"
-            }}>
+            onClick={() => { setIsMenuOpen(v => !v); setExpandedCat(null); }}>
             <span>♩</span>
             {windowWidth >= 768 && <span>點歌</span>}
-            <span className="arr" style={{
-              display: "inline-block",
-              transition: "transform 0.18s",
-              transform: isMenuOpen ? "rotate(180deg)" : "rotate(0deg)"
-            }}>▼</span>
+            <span className="arr">▼</span>
           </div>
 
           {/* 下拉面板 */}
