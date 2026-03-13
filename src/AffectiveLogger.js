@@ -1,5 +1,4 @@
-// AffectiveLogger.js - ✅ 完整修正版本
-// ⚠️ 重要：將下面的 SCRIPT_URL 換成你最新部署後的 URL
+// AffectiveLogger.js - ✅ 完整修正版本（Vite 適配）
 
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyOFIDOoDRgOdqiprotV3etzeEHPulmPZlhcrAEnHa_1OcugfzohrP5t0gcPTF8hbZfHA/exec";
 
@@ -184,20 +183,32 @@ export function logActivity(activityData) {
 }
 
 // ============================================================================
-// ✅ 兼容全局引用 - 掛到 window 上
+// ✅ 兼容全局引用 - 掛到 window 上（Vite 延遲掛載）
 // ============================================================================
 
-window.AffectiveLogger = AffectiveLogger;
-window.initLogger = initLogger;
-window.getLogger = getLogger;
-window.setUserId = setUserId;
-window.setMode = setMode;
-window.resetSessionId = resetSessionId;
-window.flushImmediately = flushImmediately;
-window.generateNextUserId = generateNextUserId;
-window.logActivity = logActivity;
+// 延遲掛載，確保在 Vite 模組加載完成後執行
+setTimeout(() => {
+    window.AffectiveLogger = AffectiveLogger;
+    window.initLogger = initLogger;
+    window.getLogger = getLogger;
+    window.setUserId = setUserId;
+    window.setMode = setMode;
+    window.resetSessionId = resetSessionId;
+    window.flushImmediately = flushImmediately;
+    window.generateNextUserId = generateNextUserId;
+    window.logActivity = logActivity;
+    console.log("[Logger] ✅ AffectiveLogger.js 已加載，所有導出函數已掛到 window");
+}, 0);
 
 // ✅ 同時支持 ES6 module 導出
-export { AffectiveLogger };
-
-console.log("[Logger] ✅ AffectiveLogger.js 已加載，所有導出函數已掛到 window");
+export { 
+    AffectiveLogger, 
+    initLogger, 
+    getLogger, 
+    setUserId, 
+    setMode, 
+    resetSessionId, 
+    flushImmediately, 
+    generateNextUserId, 
+    logActivity 
+};
