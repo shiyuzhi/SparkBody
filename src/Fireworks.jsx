@@ -2,7 +2,7 @@
 import React, { useRef, useEffect } from "react";
 import { drumKit } from "./Audio";
 import { extractLMA, resetLMA } from "./lmaEngine";
-import { logLMAData } from "./AffectiveLogger";
+import { logActivity } from "./AffectiveLogger";
 
 // ─── Particle class（原版完整保留）────────────────────────────────────────────
 class Particle {
@@ -162,7 +162,7 @@ export default function Fireworks({ poseDataRef, gestureDataRef, isLowEnd, showD
     const log = (activity, note = "") => {
       const lma = lmaRef.current;
       if (!lma) return;
-      logLMAData({
+      logActivity({
         activity,
         shape:    lma.shape,
         weight:   lma.weight,
