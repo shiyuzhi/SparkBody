@@ -19,6 +19,14 @@ export default function PoseSkeleton({
   const isLowEndRef = useRef(isLowEnd);
   const lastResultsRef = useRef(null);
 
+  // ✅ Callback Ref：避免 useEffect 依賴 function identity，防止 Holistic 重建
+  const onPoseUpdateRef = useRef(onPoseUpdate);
+  const onGestureDataRef = useRef(onGestureData);
+  const hideCanvasRef = useRef(hideCanvas);
+  useEffect(() => { onPoseUpdateRef.current = onPoseUpdate; }, [onPoseUpdate]);
+  useEffect(() => { onGestureDataRef.current = onGestureData; }, [onGestureData]);
+  useEffect(() => { hideCanvasRef.current = hideCanvas; }, [hideCanvas]);
+
   const dist = (p1, p2) => Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
 
   useEffect(() => {
@@ -86,7 +94,7 @@ export default function PoseSkeleton({
     const draw = (results) => {
       const canvas = canvasRef.current;
       const ctx = canvas?.getContext("2d");
-      if (hideCanvas || !ctx || !results) return;
+      if (hideCanvasRef.current || !ctx || !results) return;
 
       if (canvas.width !== window.innerWidth || canvas.height !== window.innerHeight) {
         canvas.width = window.innerWidth;
@@ -224,10 +232,10 @@ export default function PoseSkeleton({
       const leftG = detectGesture(results.leftHandLandmarks);
       const rightG = detectGesture(results.rightHandLandmarks);
 
-      if (onGestureData) onGestureData([[{ categoryName: leftG }], [{ categoryName: rightG }]]);
-      if (onPoseUpdate) {
+      if (onGestureDataRef.current) onGestureDataRef.current([[{ categoryName: leftG }], [{ categoryName: rightG }]]);
+      if (onPoseUpdateRef.current) {
         const flip = (lm) => lm ? { x: lm.x, y: lm.y, visibility: lm.visibility ?? 1 } : null;
-        onPoseUpdate({
+        onPoseUpdateRef.current({
           head: flip(results.poseLandmarks?.[0]),
           leftHand: flip(results.leftHandLandmarks?.[8] || results.poseLandmarks?.[15]),
           rightHand: flip(results.rightHandLandmarks?.[8] || results.poseLandmarks?.[16]),
@@ -244,21 +252,37 @@ export default function PoseSkeleton({
       draw(results);
     });
 
+    // ✅ Camera 解析度降為 640x360，減少 MediaPipe inference 計算量
     const camera = new Camera(videoRef.current, {
       onFrame: async () => {
         if (videoRef.current) await holistic.send({ image: videoRef.current });
       },
-      width: 1280,
-      height: 720,
+      width: 640,
+      height: 360,
     });
     camera.start();
+
+    // ✅ Canvas resize 改用 ResizeObserver，移出 frame loop
+    const canvas = canvasRef.current;
+    if (canvas) {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    const resizeObserver = new ResizeObserver(() => {
+      if (canvas) {
+        canvas.width = canvas.clientWidth || window.innerWidth;
+        canvas.height = canvas.clientHeight || window.innerHeight;
+      }
+    });
+    if (canvas) resizeObserver.observe(canvas);
 
     return () => {
       isMounted = false;
       camera.stop();
       holistic.close();
+      resizeObserver.disconnect();
     };
-  }, [onPoseUpdate, onGestureData, hideCanvas]);
+  }, [hideCanvas]); // hideCanvas 需要在依賴裡，否則 canvas 顯示狀態不同步
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>

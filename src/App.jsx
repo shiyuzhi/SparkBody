@@ -1,5 +1,5 @@
 // App.jsx
-import React, { useState, useEffect, useMemo, useRef, Suspense, lazy } from "react";
+import React, { useState, useEffect, useRef, Suspense, lazy } from "react";
 import "bootstrap/dist/css/bootstrap.min.css";
 import DraggableSkeleton from "./DraggableSkeleton";
 import PoseSkeleton from "./PoseSkeleton";
@@ -8,6 +8,7 @@ import { drumKit } from "./Audio";
 import MouseFireworks from "./MouseFireworks";
 // ✅ 修正：加入 initLogger，確保 Logger 單例被正確初始化
 import { initLogger, flushImmediately, setUserId, setMode, generateNextUserId, resetSessionId } from "./AffectiveLogger";
+import { resetLMA } from "./lmaEngine";
 
 // ✅ Code Splitting - 延後加載重型組件
 const DraggableYouTube = lazy(() => import("./DraggableyouTube"));
@@ -83,21 +84,13 @@ export default function App() {
     }
   }, [showLandscapeHint, windowWidth]);
 
-  const fireworksPose = useMemo(() => {
-    if (!poseData) return null;
-    return {
-      ...poseData,
-      leftHandGesture: gestureData?.[0]?.[0]?.categoryName || "None",
-      rightHandGesture: gestureData?.[1]?.[0]?.categoryName || "None",
-    };
-  }, [poseData, gestureData]);
-
   // ✅ 修正：confirmUser 加入 initLogger(id)，確保 Logger 單例存在
   const confirmUser = () => {
     const id = generateNextUserId();
     setCurrentUserId(id);
     initLogger(id);   // ← 關鍵：初始化 Logger 單例，之後 logActivity() 才能正常運作
     resetSessionId();
+    resetLMA();       // ← 每個新受試者重置 LMA baseline
     setUserId(id);
     setMode("B");
     setIsConfirmed(true);
@@ -168,6 +161,7 @@ export default function App() {
     setCurrentUserId(id);
     initLogger(id);   // ← 關鍵：新受試者重新初始化 Logger（initLogger 內部會複用單例並更新 userId）
     resetSessionId();
+    resetLMA();       // ← 每個新受試者重置 LMA baseline
     setUserId(id);
     setMode("B");
     setIsConfirmed(true);
