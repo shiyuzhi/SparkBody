@@ -235,7 +235,7 @@ export default function Fireworks({ poseDataRef, gestureDataRef, isLowEnd, showD
 
         if (lma.baselineReady && !baselineLoggedRef.current) {
           baselineLoggedRef.current = true;
-          log("Baseline_End", "30s baseline calibrated");
+          log("Baseline_End", "baseline calibrated");
         }
 
         const now = Date.now();

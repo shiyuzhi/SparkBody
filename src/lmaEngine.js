@@ -2,7 +2,7 @@
 
 const CFG = {
   EMA_ALPHA:       0.15,
-  BASELINE_FRAMES: 150,
+  BASELINE_FRAMES: 300,
   MAX_JERK:        0.025,
   MAX_TELEPORT:    0.15,   //  新增：防止座標跳轉的閾值 (150px 或 0.15 視座標系而定)
   MIN_VISIBILITY:  0.5     //  新增：更嚴格的追蹤檢查
