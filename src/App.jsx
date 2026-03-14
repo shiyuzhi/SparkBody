@@ -6,7 +6,8 @@ import PoseSkeleton from "./PoseSkeleton";
 import Fireworks from "./Fireworks";
 import { drumKit } from "./Audio";
 import MouseFireworks from "./MouseFireworks";
-import { flushImmediately, setUserId, setMode, generateNextUserId, resetSessionId } from "./AffectiveLogger";
+// ✅ 修正：加入 initLogger，確保 Logger 單例被正確初始化
+import { initLogger, flushImmediately, setUserId, setMode, generateNextUserId, resetSessionId } from "./AffectiveLogger";
 
 // ✅ Code Splitting - 延後加載重型組件
 const DraggableYouTube = lazy(() => import("./DraggableyouTube"));
@@ -47,10 +48,10 @@ export default function App() {
   const [isConfirmed, setIsConfirmed] = useState(false);
   const [sessionKey, setSessionKey] = useState(0);
   const [syncState, setSyncState] = useState({ status: "IDLE", pendingCount: 0, isOffline: false });
-  
+
   // ✅ 橫向遊玩提示
   const [showLandscapeHint, setShowLandscapeHint] = useState(true);
-  
+
   const skeletonCanvasRef = useRef(null);
   const lmaDataRef = useRef(null);
   const frameCallbackRef = useRef(null); // CanvasRecorder 的 onFrame，由 Fireworks 驅動
@@ -73,7 +74,7 @@ export default function App() {
 
   // ✅ 橫向遊玩提示 - 只在手機顯示，5 秒後自動消失
   useEffect(() => {
-    const isMobileDevice = windowWidth < 600; // ✅ 直接計算，不依賴 isMobile
+    const isMobileDevice = windowWidth < 600;
     if (showLandscapeHint && isMobileDevice) {
       const timer = setTimeout(() => {
         setShowLandscapeHint(false);
@@ -91,9 +92,11 @@ export default function App() {
     };
   }, [poseData, gestureData]);
 
+  // ✅ 修正：confirmUser 加入 initLogger(id)，確保 Logger 單例存在
   const confirmUser = () => {
     const id = generateNextUserId();
     setCurrentUserId(id);
+    initLogger(id);   // ← 關鍵：初始化 Logger 單例，之後 logActivity() 才能正常運作
     resetSessionId();
     setUserId(id);
     setMode("B");
@@ -158,10 +161,12 @@ export default function App() {
     }
   };
 
+  // ✅ 修正：resetSession 同樣加入 initLogger(id)
   const resetSession = () => {
     flushImmediately().catch(e => console.error("Flush failed:", e));
     const id = generateNextUserId();
     setCurrentUserId(id);
+    initLogger(id);   // ← 關鍵：新受試者重新初始化 Logger（initLogger 內部會複用單例並更新 userId）
     resetSessionId();
     setUserId(id);
     setMode("B");
@@ -237,37 +242,17 @@ export default function App() {
         <div
           onClick={() => setShowLandscapeHint(false)}
           style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            width: "100%",
-            height: "100%",
-            background: "rgba(0, 0, 0, 0.7)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 9999,
-            cursor: "pointer",
-            pointerEvents: "auto",
+            position: "fixed", top: 0, left: 0, width: "100%", height: "100%",
+            background: "rgba(0, 0, 0, 0.7)", display: "flex",
+            alignItems: "center", justifyContent: "center",
+            zIndex: 9999, cursor: "pointer", pointerEvents: "auto",
             animation: "fadeInOut 5s ease-in-out forwards",
           }}>
-          <div
-            style={{
-              textAlign: "center",
-              color: "#fff",
-              fontFamily: "monospace",
-              pointerEvents: "none",
-            }}>
+          <div style={{ textAlign: "center", color: "#fff", fontFamily: "monospace", pointerEvents: "none" }}>
             <div style={{ fontSize: "2rem", marginBottom: "20px" }}>📱</div>
-            <div style={{ fontSize: "1.2rem", fontWeight: "bold", marginBottom: "10px" }}>
-              請橫向遊玩
-            </div>
-            <div style={{ fontSize: "0.9rem", opacity: 0.8, marginBottom: "20px" }}>
-              Landscape mode recommended
-            </div>
-            <div style={{ fontSize: "0.75rem", opacity: 0.6 }}>
-              點按任何位置關閉 / Tap to close
-            </div>
+            <div style={{ fontSize: "1.2rem", fontWeight: "bold", marginBottom: "10px" }}>請橫向遊玩</div>
+            <div style={{ fontSize: "0.9rem", opacity: 0.8, marginBottom: "20px" }}>Landscape mode recommended</div>
+            <div style={{ fontSize: "0.75rem", opacity: 0.6 }}>點按任何位置關閉 / Tap to close</div>
           </div>
         </div>
       )}
@@ -456,8 +441,6 @@ export default function App() {
           )}
         </div>
 
-        {/* 中央標題 - 已移到主容器頂部作為 LCP 錨點 */}
-
         {/* 右側：點歌區 */}
         <div className="ms-auto d-flex align-items-center gap-2"
           style={{ zIndex: 1000, position: "relative", flexShrink: 0 }}>
@@ -491,27 +474,16 @@ export default function App() {
         </div>
       </div>
 
-      {/* ✅ 策略 B：LCP 標題 - 在工具列下方最底部 */}
+      {/* ✅ 策略 B：LCP 標題 */}
       {windowWidth >= 950 && (
-        <div
-          className="text-center"
+        <div className="text-center"
           style={{
-            pointerEvents: "none",
-            position: "fixed",
-            bottom: "5px",
-            left: "50%",
-            transform: "translateX(-50%)",
-            whiteSpace: "nowrap",
-            zIndex: 201,
+            pointerEvents: "none", position: "fixed", bottom: "5px",
+            left: "50%", transform: "translateX(-50%)",
+            whiteSpace: "nowrap", zIndex: 201,
           }}>
-          <div
-            className="text-light fw-bold"
-            style={{
-              letterSpacing: "2px",
-              opacity: 0.7,
-              fontSize: "0.85rem",
-              contentVisibility: "auto",
-            }}>
+          <div className="text-light fw-bold"
+            style={{ letterSpacing: "2px", opacity: 0.7, fontSize: "0.85rem", contentVisibility: "auto" }}>
             SPARKBODY STAGE
           </div>
         </div>
