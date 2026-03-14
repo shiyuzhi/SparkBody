@@ -1,4 +1,4 @@
-import{a as e,j as a}from"./index-DRCt8QYp.js";const N={display:"flex",alignItems:"center",justifyContent:"center",gap:"10px",position:"relative",zIndex:1e3,backdropFilter:"blur(8px)",padding:"6px 16px",borderRadius:"10px",fontSize:"13px",fontWeight:"600",fontFamily:"monospace",cursor:"pointer",transition:"all 0.1s ease",border:"1px solid",minWidth:"140px",height:"38px",outline:"none"},_=`
+import{a as e,j as a}from"./index-DtmyBE4u.js";const N={display:"flex",alignItems:"center",justifyContent:"center",gap:"10px",position:"relative",zIndex:1e3,backdropFilter:"blur(8px)",padding:"6px 16px",borderRadius:"10px",fontSize:"13px",fontWeight:"600",fontFamily:"monospace",cursor:"pointer",transition:"all 0.1s ease",border:"1px solid",minWidth:"140px",height:"38px",outline:"none"},_=`
   @keyframes rec-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
   .rec-btn-recording { background: rgba(255, 59, 48, 0.2) !important; color: #ff453a !important; border-color: #ff453a !important; }
   .rec-btn-idle { background: rgba(255, 255, 255, 0.05); color: #ccc; border-color: #444; }
