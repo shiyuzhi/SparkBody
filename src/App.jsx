@@ -6,15 +6,15 @@ import PoseSkeleton from "./PoseSkeleton";
 import Fireworks from "./Fireworks";
 import { drumKit } from "./Audio";
 import MouseFireworks from "./MouseFireworks";
-// ✅ 修正：加入 initLogger，確保 Logger 單例被正確初始化
+//  修正：加入 initLogger，確保 Logger 單例被正確初始化
 import { initLogger, flushImmediately, setUserId, setMode, generateNextUserId, resetSessionId } from "./AffectiveLogger";
 import { resetLMA } from "./lmaEngine";
 
-// ✅ Code Splitting - 延後加載重型組件
+// Code Splitting - 延後加載重型組件
 const DraggableYouTube = lazy(() => import("./DraggableyouTube"));
-const CanvasRecorder = lazy(() => import("./Canvasrecorder"));
+// const CanvasRecorder = lazy(() => import("./Canvasrecorder")); // 🚫 錄影功能已停用
 
-// ✅ Suspense Fallback 組件
+// Suspense Fallback 組件
 const LoadingSpinner = () => (
   <div style={{
     width: "24px", height: "24px", borderRadius: "50%",
@@ -50,18 +50,18 @@ export default function App() {
   const [sessionKey, setSessionKey] = useState(0);
   const [syncState, setSyncState] = useState({ status: "IDLE", pendingCount: 0, isOffline: false });
 
-  // ✅ 橫向遊玩提示
+  //  橫向遊玩提示
   const [showLandscapeHint, setShowLandscapeHint] = useState(true);
 
   const skeletonCanvasRef = useRef(null);
   const lmaDataRef = useRef(null);
-  const frameCallbackRef = useRef(null); // CanvasRecorder 的 onFrame，由 Fireworks 驅動
+  // const frameCallbackRef = useRef(null); // 🚫 CanvasRecorder 已停用
 
-  // ✅ 策略 C：分離偵測邏輯 - 使用 Ref 減少重新渲染
+  //  策略 C：分離偵測邏輯 - 使用 Ref 減少重新渲染
   const poseDataRef = useRef(null);
   const gestureDataRef = useRef(null);
 
-  // ✅ 計算式 - 需要在 useEffect 之前定義
+  //  計算式 - 需要在 useEffect 之前定義
   const isLandscapePhone = windowHeight < 500;
 
   // 當 poseData 改變時，只更新 Ref（不觸發 App 重新渲染）
@@ -73,7 +73,7 @@ export default function App() {
     gestureDataRef.current = gestureData;
   }, [gestureData]);
 
-  // ✅ 橫向遊玩提示 - 只在手機顯示，5 秒後自動消失
+  //  橫向遊玩提示 - 只在手機顯示，5 秒後自動消失
   useEffect(() => {
     const isMobileDevice = windowWidth < 600;
     if (showLandscapeHint && isMobileDevice) {
@@ -84,7 +84,7 @@ export default function App() {
     }
   }, [showLandscapeHint, windowWidth]);
 
-  // ✅ 修正：confirmUser 加入 initLogger(id)，確保 Logger 單例存在
+  //  修正：confirmUser 加入 initLogger(id)，確保 Logger 單例存在
   const confirmUser = () => {
     const id = generateNextUserId();
     setCurrentUserId(id);
@@ -154,7 +154,7 @@ export default function App() {
     }
   };
 
-  // ✅ 修正：resetSession 同樣加入 initLogger(id)
+  //  修正：resetSession 同樣加入 initLogger(id)
   const resetSession = () => {
     flushImmediately().catch(e => console.error("Flush failed:", e));
     const id = generateNextUserId();
@@ -251,11 +251,11 @@ export default function App() {
         </div>
       )}
 
-      {/* ✅ Fireworks - 核心組件，不延後加載 */}
-      {/* ✅ INP 優化：傳遞 Ref 而不是 Props，避免組件重新渲染 */}
+      {/*  Fireworks - 核心組件，不延後加載 */}
+      {/*  INP 優化：傳遞 Ref 而不是 Props，避免組件重新渲染 */}
       <Fireworks poseDataRef={poseDataRef} gestureDataRef={gestureDataRef} isLowEnd={isLowEnd} showDebug={showDebug}
         mode={`B-${sessionKey}`} onLMAUpdate={(lma) => { lmaDataRef.current = lma; }}
-        onFrameReady={(canvas) => frameCallbackRef.current?.(canvas)} />
+        /* onFrameReady={(canvas) => frameCallbackRef.current?.(canvas)} // 🚫 CanvasRecorder 已停用 */ />
 
       <DraggableSkeleton scale={skeletonScale} visible={showSkeleton} onHide={() => setShowSkeleton(false)}
         width={isLandscapePhone ? windowHeight * 0.8 : 600}
@@ -266,7 +266,7 @@ export default function App() {
           skeletonCanvasRef={skeletonCanvasRef} lmaDataRef={lmaDataRef} showDebug={showDebug} />
       </DraggableSkeleton>
 
-      {/* ✅ 鼠標 Fireworks - 低端模式不顯示 */}
+      {/*  鼠標 Fireworks - 低端模式不顯示 */}
       {!isLowEnd && <MouseFireworks isLowEnd={isLowEnd} />}
 
       {/* ── CSS ── */}
@@ -423,7 +423,7 @@ export default function App() {
 
           <div className="tb-sep" />
 
-          {/* ✅ 策略 A：Code Splitting - 延後加載錄影 */}
+          {/* 🚫 錄影功能已停用
           {!isLowEnd && (
             <Suspense fallback={<LoadingSpinner />}>
               <CanvasRecorder
@@ -433,6 +433,7 @@ export default function App() {
               />
             </Suspense>
           )}
+          */}
         </div>
 
         {/* 右側：點歌區 */}
@@ -483,7 +484,7 @@ export default function App() {
         </div>
       )}
 
-      {/* ✅ 策略 A：Code Splitting - 延後加載 YouTube */}
+      {/* 策略 A：Code Splitting - 延後加載 YouTube */}
       {showMusic && (
         <Suspense fallback={<LoadingSpinner />}>
           <DraggableYouTube videoId={videoId}

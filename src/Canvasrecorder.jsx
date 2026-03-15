@@ -30,13 +30,9 @@ const CSS_ANIMATIONS = `
   .dot-idle { background: #666; }
 `;
 
-const RECORD_FPS = 15;
+const RECORD_FPS = 12;
 const FRAME_INTERVAL_MS = 1000 / RECORD_FPS;
 
-// 架構說明：
-// 舊版：CanvasRecorder 自己跑 RAF → 和 Fireworks RAF 互搶主線程 → 雙方都延遲
-// 新版：CanvasRecorder 不跑 RAF，改由 Fireworks 每幀結束後呼叫 onFrame callback
-//       合成工作寄生在 Fireworks 的幀裡，主線程只有一個 RAF loop
 export default function CanvasRecorder({ skeletonCanvasRef, userId, onRegisterFrameCallback }) {
   const [isRecordingState, setIsRecordingState] = useState(false);
   const [seconds, setSeconds] = useState(0);
@@ -50,7 +46,6 @@ export default function CanvasRecorder({ skeletonCanvasRef, userId, onRegisterFr
   const secondsRef     = useRef(0);
   const lastDrawTime   = useRef(0);
 
-  // ── 合成邏輯：由 Fireworks 每幀呼叫，fwCanvas 是 Fireworks 的 canvas ──
   const onFrame = useCallback((fwCanvas) => {
     if (!recordingRef.current) return;
 
@@ -66,10 +61,8 @@ export default function CanvasRecorder({ skeletonCanvasRef, userId, onRegisterFr
     ctx.fillStyle = "#000";
     ctx.fillRect(0, 0, composite.width, composite.height);
 
-    if (fwCanvas?.width > 0)
-      ctx.drawImage(fwCanvas, 0, 0, composite.width, composite.height);
-    if (skCanvas?.width > 0)
-      ctx.drawImage(skCanvas, 0, 0, composite.width, composite.height);
+    if (fwCanvas?.width > 0) ctx.drawImage(fwCanvas, 0, 0, composite.width, composite.height);
+    if (skCanvas?.width > 0) ctx.drawImage(skCanvas, 0, 0, composite.width, composite.height);
 
     const mm = String(Math.floor(secondsRef.current / 60)).padStart(2, "0");
     const ss = String(secondsRef.current % 60).padStart(2, "0");
@@ -78,7 +71,6 @@ export default function CanvasRecorder({ skeletonCanvasRef, userId, onRegisterFr
     ctx.fillText(`REC ${mm}:${ss}  ${userId || ""}`, 12, composite.height - 12);
   }, [skeletonCanvasRef, userId]);
 
-  // 把 onFrame 註冊給 App → 傳給 Fireworks
   useEffect(() => {
     onRegisterFrameCallback?.(onFrame);
   }, [onFrame, onRegisterFrameCallback]);
@@ -87,9 +79,7 @@ export default function CanvasRecorder({ skeletonCanvasRef, userId, onRegisterFr
     recordingRef.current = false;
     setIsRecordingState(false);
 
-    if (recorderRef.current?.state !== "inactive") {
-      recorderRef.current.stop();
-    }
+    if (recorderRef.current?.state !== "inactive") recorderRef.current.stop();
     if (timerRef.current) clearInterval(timerRef.current);
 
     recorderRef.current  = null;
@@ -100,17 +90,15 @@ export default function CanvasRecorder({ skeletonCanvasRef, userId, onRegisterFr
   }, []);
 
   useEffect(() => {
-    return () => {
-      if (recordingRef.current) stopRecording();
-    };
+    return () => { if (recordingRef.current) stopRecording(); };
   }, [stopRecording]);
 
   const startRecording = useCallback(() => {
     const composite = compositeRef.current;
     if (!composite) return;
 
-    composite.width  = 480;
-    composite.height = 270;
+    composite.width  = 320; // 輕量解析度
+    composite.height = 180;
     ctxRef.current = composite.getContext("2d", { alpha: false, willReadFrequently: false });
 
     chunksRef.current    = [];
@@ -119,19 +107,16 @@ export default function CanvasRecorder({ skeletonCanvasRef, userId, onRegisterFr
 
     const stream = composite.captureStream(RECORD_FPS);
 
-    // VP8 編碼比 VP9 輕很多，期刊錄影畫質夠用
     const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp8")
       ? "video/webm;codecs=vp8"
       : "video/webm";
 
     const recorder = new MediaRecorder(stream, {
       mimeType,
-      videoBitsPerSecond: 300_000, // 270p 用 300kbps 已足夠
+      videoBitsPerSecond: 200_000, // 降低比特率
     });
 
-    recorder.ondataavailable = (e) => {
-      if (e.data?.size > 0) chunksRef.current.push(e.data);
-    };
+    recorder.ondataavailable = (e) => { if (e.data?.size > 0) chunksRef.current.push(e.data); };
 
     recorder.onstop = () => {
       if (!chunksRef.current.length) return;
@@ -142,7 +127,7 @@ export default function CanvasRecorder({ skeletonCanvasRef, userId, onRegisterFr
       a.download = `REC_${userId || "user"}_${Date.now()}.webm`;
       document.body.appendChild(a);
       a.click();
-      setTimeout(() => { a.parentNode?.removeChild(a); URL.revokeObjectURL(url); }, 500);
+      setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 500);
     };
 
     recorderRef.current = recorder;
