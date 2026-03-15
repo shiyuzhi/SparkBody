@@ -159,19 +159,36 @@ export default function Fireworks({ poseDataRef, gestureDataRef, isLowEnd, showD
     let raf;
 
     // ── Helper: log LMA shorthand ────────────────────────────────────────────
-    const log = (activity, note = "") => {
+    // coords 由 render 迴圈在當幀直接封裝後傳入，避免 Ref 時序問題
+    const log = (activity, note = "", coords = {}) => {
       const lma = lmaRef.current;
       if (!lma) return;
+
       logActivity({
         activity,
-        shape_n:  lma.n.shape,
-        weight_n: lma.n.weight,
-        flow_n:   lma.n.flow,
-        kt:       lma.kt,
+        shape_n:       lma.n.shape  || 0,
+        weight_n:      lma.n.weight || 0,
+        flow_n:        lma.n.flow   || 0,
+        kt:            lma.kt       || 0,
         baselineReady: lma.baselineReady,
         note,
+        lh_x: coords.lh_x ?? null,
+        lh_y: coords.lh_y ?? null,
+        rh_x: coords.rh_x ?? null,
+        rh_y: coords.rh_y ?? null,
+        ls_x: coords.ls_x ?? null,
+        ls_y: coords.ls_y ?? null,
+        rs_x: coords.rs_x ?? null,
+        rs_y: coords.rs_y ?? null,
       });
+
+      if (showDebugRef.current) {
+        console.log(`[Logger] ${activity} | lh:(${coords.lh_x?.toFixed(3)}, ${coords.lh_y?.toFixed(3)})`);
+      }
     };
+
+    // nowCoords 在 render 迴圈開頭建立，供所有 log() 呼叫使用
+    let nowCoords = {};
 
     // ── Heart helper（原版保留）──────────────────────────────────────────────
     const createSmallHeart = (centerX, centerY) => {
@@ -189,7 +206,17 @@ export default function Fireworks({ poseDataRef, gestureDataRef, isLowEnd, showD
         particles.current.push(p);
       }
       // ★ Log heart event
-      log("Heart");
+      const _p = poseDataRef.current;
+      log("Heart", "", {
+        lh_x: typeof _p?.leftHand?.x      === "number" ? _p.leftHand.x      : null,
+        lh_y: typeof _p?.leftHand?.y      === "number" ? _p.leftHand.y      : null,
+        rh_x: typeof _p?.rightHand?.x     === "number" ? _p.rightHand.x     : null,
+        rh_y: typeof _p?.rightHand?.y     === "number" ? _p.rightHand.y     : null,
+        ls_x: typeof _p?.leftShoulder?.x  === "number" ? _p.leftShoulder.x  : null,
+        ls_y: typeof _p?.leftShoulder?.y  === "number" ? _p.leftShoulder.y  : null,
+        rs_x: typeof _p?.rightShoulder?.x === "number" ? _p.rightShoulder.x : null,
+        rs_y: typeof _p?.rightShoulder?.y === "number" ? _p.rightShoulder.y : null,
+      });
     };
 
     // ── Render loop ──────────────────────────────────────────────────────────
@@ -225,6 +252,18 @@ export default function Fireworks({ poseDataRef, gestureDataRef, isLowEnd, showD
       const { leftHand, rightHand, leftKnee, rightKnee,
               leftElbow, rightElbow, leftShoulder, rightShoulder } = currentPose;
 
+      // 當幀座標包，直接傳給所有 log() 呼叫，避免 Ref 時序問題
+      nowCoords = {
+        lh_x: typeof leftHand?.x      === "number" ? leftHand.x      : null,
+        lh_y: typeof leftHand?.y      === "number" ? leftHand.y      : null,
+        rh_x: typeof rightHand?.x     === "number" ? rightHand.x     : null,
+        rh_y: typeof rightHand?.y     === "number" ? rightHand.y     : null,
+        ls_x: typeof leftShoulder?.x  === "number" ? leftShoulder.x  : null,
+        ls_y: typeof leftShoulder?.y  === "number" ? leftShoulder.y  : null,
+        rs_x: typeof rightShoulder?.x === "number" ? rightShoulder.x : null,
+        rs_y: typeof rightShoulder?.y === "number" ? rightShoulder.y : null,
+      };
+
       // ══════════════════════════════════════════════════════════════════════
       // ★ 區塊一：LMA 計算與數據紀錄 (不影響煙火)
       // ══════════════════════════════════════════════════════════════════════
@@ -235,12 +274,12 @@ export default function Fireworks({ poseDataRef, gestureDataRef, isLowEnd, showD
 
         if (lma.baselineReady && !baselineLoggedRef.current) {
           baselineLoggedRef.current = true;
-          log("Baseline_End", "baseline calibrated");
+          log("Baseline_End", "baseline calibrated", nowCoords);
         }
 
         const now = Date.now();
         if (lma.baselineReady && (now - lastContinuousLogTime.current > 30000)) {
-          log("Dance_Continuous", "30s_Interval_AutoLog");
+          log("Dance_Continuous", "30s_Interval_AutoLog", nowCoords);
           lastContinuousLogTime.current = now;
         }
 
@@ -276,7 +315,7 @@ export default function Fireworks({ poseDataRef, gestureDataRef, isLowEnd, showD
           
           const now = Date.now();
           if (now - lastVictoryLogTime.current[sideKey] > 2000) {
-            log("Victory", sideKey);
+            log("Victory", sideKey, nowCoords);
             lastVictoryLogTime.current[sideKey] = now;
           }
 
@@ -311,7 +350,7 @@ export default function Fireworks({ poseDataRef, gestureDataRef, isLowEnd, showD
               particles.current.push(new Particle(x, y, explosionColor, "explosion", isLowEndRef.current));
             }
 
-            log("Fireworks_Explosion", side);
+            log("Fireworks_Explosion", side, nowCoords);
             status.current[side + "Ready"] = false;
           }
         } else {
@@ -376,7 +415,7 @@ export default function Fireworks({ poseDataRef, gestureDataRef, isLowEnd, showD
           if (now - (bStatus.lastTriggerTime || 0) > 1000) {
             bStatus.lastTriggerTime = now;
             drumKit.play("bird", { volume: 0.8, detune: -200, duration: 1.5 });
-            log("Gull_Flap");
+            log("Gull_Flap", "", nowCoords);
 
             const birdX = (1 - (leftHand.x + rightHand.x) / 2) * w;
             const birdY = ((leftHand.y + rightHand.y) / 2) * h;
