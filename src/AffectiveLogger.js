@@ -1,5 +1,5 @@
 // AffectiveLogger.js - v5.3
-// ✅ 修改摘要（相較 v5.2）：
+// 修改摘要（相較 v5.2）：
 //    1. log() 的 entry 新增 lh_x / lh_y / rh_x / rh_y / ls_x / ls_y / rs_x / rs_y 欄位
 //       → 由 logActivity() 呼叫端傳入，或由新增的 logActivityWithPose() 一次帶入
 //    2. 新增 logActivityWithPose(activityData, poseData) 便利函式
@@ -185,9 +185,13 @@ export async function flushImmediately() { if (currentLogger) return currentLogg
 
 export function generateNextUserId() { return `NCNU_User_${Date.now()}`; }
 
-// ✅ 原始 logActivity：維持向下相容，note 欄位由外部組裝
+// 原始 logActivity：維持向下相容，note 欄位由外部組裝
 export function logActivity(activityData) {
-  if (!currentLogger) { console.warn("[Logger] 尚未初始化"); return; }
+  if (!currentLogger) {
+    // 使用者尚未按「Set Participant」，先用 anonymous 頂著，之後 initLogger(id) 會接手
+    currentLogger = new AffectiveLogger("anonymous");
+    window.logger = currentLogger;
+  }
   currentLogger.log({ mode: currentMode, ...activityData });
 }
 
@@ -196,7 +200,10 @@ export function logActivity(activityData) {
 //    poseData 結構與 PoseSkeleton.jsx onPoseUpdate 回傳相同：
 //      { leftHand, rightHand, leftShoulder, rightShoulder, ... }
 export function logActivityWithPose(activityData, poseData) {
-  if (!currentLogger) { console.warn("[Logger] 尚未初始化"); return; }
+  if (!currentLogger) {
+    currentLogger = new AffectiveLogger("anonymous");
+    window.logger = currentLogger;
+  }
 
   const lh = poseData?.leftHand;
   const rh = poseData?.rightHand;
@@ -222,7 +229,7 @@ setTimeout(() => {
   Object.assign(window, {
     initLogger, getLogger, setUserId, setMode,
     resetSessionId, flushImmediately, generateNextUserId,
-    logActivity, logActivityWithPose,   // ✅ v5.3 新增 logActivityWithPose
+    logActivity, logActivityWithPose,
   });
-  console.log("[Logger] ✅ AffectiveLogger v5.3 已掛載到 window");
+  console.log("[Logger] AffectiveLogger v5.3 已掛載到 window");
 }, 0);
