@@ -432,7 +432,7 @@ export default function App() {
                 <line x1="0" y1="55" x2="-15" y2="85" className="gs"/>
                 <line x1="0" y1="55" x2="15" y2="85" className="gs"/>
               </g>
-              <text x="410" y="162" className="gl">雙手靠近</text>
+              <text x="410" y="162" className="gl">雙手觸碰</text>
               <text x="410" y="182" className="gs2">🤲❤️</text>
               <g transform="translate(580,60)">
                 <circle cx="0" cy="0" r="12" className="gh"/>
@@ -444,7 +444,7 @@ export default function App() {
                 <line x1="0" y1="55" x2="-15" y2="85" className="gs"/>
                 <line x1="0" y1="55" x2="15" y2="85" className="gs"/>
               </g>
-              <text x="580" y="162" className="gl">雙手舉高</text>
+              <text x="580" y="162" className="gl">雙手舉高放下</text>
               <text x="580" y="182" className="gs2">🦅👇</text>
             </svg>
         </div>
