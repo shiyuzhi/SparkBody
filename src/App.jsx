@@ -45,6 +45,7 @@ export default function App() {
     return isWeakCPU || isIOSChrome || isSmallScreen;
   });
   const [showDebug, setShowDebug] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
   const [currentUserId, setCurrentUserId] = useState("");
   const [isConfirmed, setIsConfirmed] = useState(false);
   const [sessionKey, setSessionKey] = useState(0);
@@ -369,6 +370,86 @@ export default function App() {
         .yt-input::placeholder { color:rgba(0,220,255,0.4); }
       `}</style>
 
+      {/* ── 動作指引卡片 ── */}
+      {showGuide && (
+        <div style={{
+          position: "absolute",
+          bottom: isLandscapePhone ? "50px" : "65px",
+          left: "50%",
+          transform: "translateX(-50%)",
+          zIndex: 199,
+          pointerEvents: "none",
+        }}>
+          <svg width="1440" height="444" viewBox="0 0 680 210" xmlns="http://www.w3.org/2000/svg">
+              <style>{`
+                .gs { stroke: #FF6B2B; stroke-width: 3; stroke-linecap: round; fill: none; }
+                .gh { stroke: #FF6B2B; stroke-width: 3; fill: none; }
+                .gl { font-family: sans-serif; font-size: 13px; fill: #FF6B2B; text-anchor: middle; font-weight: bold; }
+                .gs2{ font-family: sans-serif; font-size: 14px; fill: #ccc; text-anchor: middle; }
+                .gc { fill: rgba(255,107,43,0.06); stroke: rgba(255,107,43,0.25); stroke-width: 1; }
+              `}</style>
+              <rect x="20"  y="10" width="140" height="185" rx="8" className="gc"/>
+              <rect x="180" y="10" width="140" height="185" rx="8" className="gc"/>
+              <rect x="340" y="10" width="140" height="185" rx="8" className="gc"/>
+              <rect x="500" y="10" width="160" height="185" rx="8" className="gc"/>
+              <g transform="translate(90,55)">
+                <circle cx="0" cy="0" r="12" className="gh"/>
+                <line x1="0" y1="12" x2="0" y2="55" className="gs"/>
+                <line x1="0" y1="25" x2="-28" y2="10" className="gs"/>
+                <line x1="-28" y1="10" x2="-28" y2="-5" className="gs"/>
+                <line x1="-28" y1="-5" x2="-22" y2="-18" className="gs"/>
+                <line x1="-28" y1="-5" x2="-34" y2="-18" className="gs"/>
+                <line x1="0" y1="25" x2="20" y2="18" className="gs"/>
+                <line x1="0" y1="55" x2="-15" y2="85" className="gs"/>
+                <line x1="0" y1="55" x2="15" y2="85" className="gs"/>
+              </g>
+              <text x="90" y="162" className="gl">比YA</text>
+              <text x="90" y="182" className="gs2">✌️</text>
+              <g transform="translate(250,55)">
+                <circle cx="0" cy="0" r="12" className="gh"/>
+                <line x1="0" y1="12" x2="0" y2="55" className="gs"/>
+                <line x1="0" y1="25" x2="-28" y2="10" className="gs"/>
+                <line x1="-28" y1="10" x2="-28" y2="-2" className="gs"/>
+                <line x1="0" y1="25" x2="28" y2="10" className="gs"/>
+                <line x1="28" y1="10" x2="20" y2="-4" className="gs"/>
+                <line x1="28" y1="10" x2="28" y2="-4" className="gs"/>
+                <line x1="28" y1="10" x2="34" y2="-2" className="gs"/>
+                <line x1="28" y1="10" x2="38" y2="4" className="gs"/>
+                <line x1="28" y1="10" x2="40" y2="12" className="gs"/>
+                <line x1="0" y1="55" x2="-15" y2="85" className="gs"/>
+                <line x1="0" y1="55" x2="15" y2="85" className="gs"/>
+              </g>
+              <text x="250" y="162" className="gl">握拳→張開</text>
+              <text x="250" y="182" className="gs2">✊→🖐️</text>
+              <g transform="translate(410,60)">
+                <path d="M0,-35 C0,-45 -12,-45 -12,-35 C-12,-25 0,-18 0,-18 C0,-18 12,-25 12,-35 C12,-45 0,-45 0,-35 Z" fill="#ff4d4d"/>
+                <circle cx="0" cy="0" r="12" className="gh"/>
+                <line x1="0" y1="12" x2="0" y2="55" className="gs"/>
+                <line x1="0" y1="22" x2="-22" y2="5" className="gs"/>
+                <line x1="-22" y1="5" x2="-10" y2="-18" className="gs"/>
+                <line x1="0" y1="22" x2="22" y2="5" className="gs"/>
+                <line x1="22" y1="5" x2="10" y2="-18" className="gs"/>
+                <line x1="0" y1="55" x2="-15" y2="85" className="gs"/>
+                <line x1="0" y1="55" x2="15" y2="85" className="gs"/>
+              </g>
+              <text x="410" y="162" className="gl">雙手靠近</text>
+              <text x="410" y="182" className="gs2">🤲❤️</text>
+              <g transform="translate(580,60)">
+                <circle cx="0" cy="0" r="12" className="gh"/>
+                <line x1="0" y1="12" x2="0" y2="55" className="gs"/>
+                <line x1="0" y1="22" x2="-48" y2="8" className="gs"/>
+                <line x1="0" y1="22" x2="48" y2="8" className="gs"/>
+                <line x1="-48" y1="8" x2="-58" y2="22" className="gs"/>
+                <line x1="48" y1="8" x2="58" y2="22" className="gs"/>
+                <line x1="0" y1="55" x2="-15" y2="85" className="gs"/>
+                <line x1="0" y1="55" x2="15" y2="85" className="gs"/>
+              </g>
+              <text x="580" y="162" className="gl">雙手舉高</text>
+              <text x="580" y="182" className="gs2">🦅👇</text>
+            </svg>
+        </div>
+      )}
+
       {/* ── 底部工具列 ── */}
       <div className="w-100 d-flex align-items-center px-3 px-md-4"
         style={{ background: "rgba(15,15,15,0.95)", borderTop: "1px solid #333", zIndex: 200,
@@ -439,6 +520,21 @@ export default function App() {
         {/* 右側：點歌區 */}
         <div className="ms-auto d-flex align-items-center gap-2"
           style={{ zIndex: 1000, position: "relative", flexShrink: 0 }}>
+
+          {/* 動作指引按鈕 */}
+          <button
+            onClick={() => setShowGuide(v => !v)}
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "center",
+              height: "32px", borderRadius: "6px", cursor: "pointer",
+              padding: "0 8px",
+              background: showGuide ? "rgba(255,107,43,0.15)" : "rgba(255,255,255,0.04)",
+              border: showGuide ? "1px solid #FF6B2B" : "1px solid rgba(255,255,255,0.13)",
+              color: showGuide ? "#FF6B2B" : "#fff",
+              fontSize: "0.75rem", fontFamily: "monospace", whiteSpace: "nowrap",
+            }}>
+            動作指引
+          </button>
 
           {/* 回饋按鈕 */}
           <a href="https://forms.gle/fmD9XYixYHLLrjQP6" target="_blank" rel="noopener noreferrer"
