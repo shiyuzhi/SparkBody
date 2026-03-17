@@ -232,10 +232,10 @@ export default function PoseSkeleton({
       const leftG = detectGesture(results.leftHandLandmarks);
       const rightG = detectGesture(results.rightHandLandmarks);
 
-      if (onGestureDataRef.current) onGestureDataRef.current([[{ categoryName: leftG }], [{ categoryName: rightG }]]);
-      if (onPoseUpdateRef.current) {
+      if (onGestureData) onGestureData([[{ categoryName: leftG }], [{ categoryName: rightG }]]);
+      if (onPoseUpdate) {
         const flip = (lm) => lm ? { x: lm.x, y: lm.y, visibility: lm.visibility ?? 1 } : null;
-        onPoseUpdateRef.current({
+        onPoseUpdate({
           head: flip(results.poseLandmarks?.[0]),
           leftHand: flip(results.leftHandLandmarks?.[8] || results.poseLandmarks?.[15]),
           rightHand: flip(results.rightHandLandmarks?.[8] || results.poseLandmarks?.[16]),
@@ -252,7 +252,6 @@ export default function PoseSkeleton({
       draw(results);
     });
 
-    // ✅ Camera 解析度降為 640x360，減少 MediaPipe inference 計算量
     const camera = new Camera(videoRef.current, {
       onFrame: async () => {
         if (videoRef.current) await holistic.send({ image: videoRef.current });
@@ -262,27 +261,12 @@ export default function PoseSkeleton({
     });
     camera.start();
 
-    // ✅ Canvas resize 改用 ResizeObserver，移出 frame loop
-    const canvas = canvasRef.current;
-    if (canvas) {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-    }
-    const resizeObserver = new ResizeObserver(() => {
-      if (canvas) {
-        canvas.width = canvas.clientWidth || window.innerWidth;
-        canvas.height = canvas.clientHeight || window.innerHeight;
-      }
-    });
-    if (canvas) resizeObserver.observe(canvas);
-
     return () => {
       isMounted = false;
       camera.stop();
       holistic.close();
-      resizeObserver.disconnect();
     };
-  }, [hideCanvas]); // hideCanvas 需要在依賴裡，否則 canvas 顯示狀態不同步
+  }, [onPoseUpdate, onGestureData, hideCanvas]);
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
