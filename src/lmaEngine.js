@@ -123,9 +123,9 @@ export function extractLMA(poseData) {
 
   buildBaseline(sShape, sWeight, sFlow);
 
-  const nShape  = normalise("shape",  sShape);
-  const nWeight = normalise("weight", sWeight);
-  const nFlow   = normalise("flow",   sFlow);
+  const nShape  = clamp(normalise("shape",  sShape),  0, 1);
+  const nWeight = clamp(normalise("weight", sWeight), 0, 1);
+  const nFlow   = clamp(normalise("flow",   sFlow),   0, 1);
   const kt      = clamp(0.40 * nWeight + 0.35 * (1 - nFlow) + 0.25 * nShape, 0, 1);
 
   _prev = {

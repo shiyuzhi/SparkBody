@@ -362,17 +362,31 @@ export default function Fireworks({ poseDataRef, gestureDataRef, isLowEnd, showD
             status.current[side + "Ready"] = true;
           }
 
-        } else if (gesture === "Open_Palm") {
-          // 3. 張掌判定 (觸發煙火)
+      } else if (gesture === "Open_Palm") {
           status.current[side + "Count"] = 0;
           if (status.current[side + "Ready"]) {
             const newHue = Math.floor(Math.random() * 360);
             status.current[side + "Color"] = `hsl(${newHue}, 100%, 60%)`;
             const explosionColor = status.current[side + "Color"];
             drumKit.play("boom", { volume: 0.6, detune: 0, pan });
-            
-          for (let i = 0; i < (isLowEndRef.current ? 8 : 40); i++) {
-              particles.current.push(new Particle(x, y, explosionColor, "explosion", isLowEndRef.current));
+
+            // ── KT Mapping ──────────────────────────────────────
+            const lma     = lmaRef.current;
+            const kt      = lma?.kt      ?? 0.5;
+            const weight  = lma?.n?.weight ?? 0.5;
+            const spread  = lma?.n?.shape  ?? 0.5;
+            const count   = Math.round(20 + kt * 60);        // 20~80 顆
+            const speedSc = 0.5 + weight * 1.5;              // 速度倍率
+            const angleR  = Math.PI * (0.5 + spread * 1.5);  // 角度範圍
+            // ────────────────────────────────────────────────────
+
+            for (let i = 0; i < (isLowEndRef.current ? 8 : count); i++) {
+              const p = new Particle(x, y, explosionColor, "explosion", isLowEndRef.current);
+              const angle = (Math.random() - 0.5) * angleR * 2;
+              const speed = (Math.random() * 4 + 4) * speedSc;
+              p.vx = Math.cos(angle) * speed;
+              p.vy = Math.sin(angle) * speed;
+              particles.current.push(p);
             }
 
             log("Fireworks_Explosion", side, nowCoords);
