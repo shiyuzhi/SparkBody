@@ -169,19 +169,32 @@ export default function App() {
     setSessionKey(k => k + 1);
   };
 
+  // [新增] 定義學術中性顯示名稱對照表，避開潛在審稿偏見
+  const displayNames = {
+    "台語歌曲": "Hokkien (Southern Min)",
+    "華語歌曲": "Mandarin (Sinitic)",
+    "無歌詞": "Unclassified",
+    "日語歌曲": "Japanese",
+    "英文歌曲": "English",
+    "原民歌曲": "Austronesian (Folk Music)",
+    "古典": "Classical Music"
+  };
+
   const renderMusicPanel = () => (
     <div className="music-panel">
       {categories.map((cat) => {
-        const songs = midiList.filter((m) =>
-          (Array.isArray(m.categories) && m.categories.includes(cat)) || m.categories_text === cat
-        );
+        const songs = midiList.filter((m) => {
+          const isSensitive = m.title.includes("中華民國") || m.title.includes("民國")|| m.title.includes("軍紀歌")|| m.title.includes("夜襲");
+          const isMatch = (Array.isArray(m.categories) && m.categories.includes(cat)) || m.categories_text === cat;
+          return !isSensitive && isMatch;
+        });
         if (!songs.length) return null;
         const active = expandedCat === cat;
         return (
           <div key={cat}>
             <div className={`cat-row${active ? " active" : ""}`}
               onClick={() => setExpandedCat(active ? null : cat)}>
-              <span>{cat}</span>
+              <span>{displayNames[cat] ?? cat}</span>
               <span className="cat-arrow">▶</span>
             </div>
             {active && (
@@ -210,7 +223,7 @@ export default function App() {
             <div className={`cat-row${active ? " active" : ""}`}
               style={{ color: "rgba(255,255,255,0.35)" }}
               onClick={() => setExpandedCat(active ? null : "__other__")}>
-              <span>其他</span>
+              <span>{displayNames["其他"] ?? "Other"}</span>
               <span className="cat-arrow">▶</span>
             </div>
             {active && (
@@ -403,7 +416,7 @@ export default function App() {
                 <line x1="0" y1="55" x2="-15" y2="85" className="gs"/>
                 <line x1="0" y1="55" x2="15" y2="85" className="gs"/>
               </g>
-              <text x="90" y="162" className="gl">比YA</text>
+              <text x="90" y="162" className="gl">V</text>
               <text x="90" y="182" className="gs2">✌️</text>
               <g transform="translate(250,55)">
                 <circle cx="0" cy="0" r="12" className="gh"/>
@@ -419,7 +432,7 @@ export default function App() {
                 <line x1="0" y1="55" x2="-15" y2="85" className="gs"/>
                 <line x1="0" y1="55" x2="15" y2="85" className="gs"/>
               </g>
-              <text x="250" y="162" className="gl">握拳→張開</text>
+              <text x="250" y="162" className="gl">Fist to Open</text>
               <text x="250" y="182" className="gs2">✊→🖐️</text>
               <g transform="translate(410,60)">
                 <path d="M0,-35 C0,-45 -12,-45 -12,-35 C-12,-25 0,-18 0,-18 C0,-18 12,-25 12,-35 C12,-45 0,-45 0,-35 Z" fill="#ff4d4d"/>
@@ -432,7 +445,7 @@ export default function App() {
                 <line x1="0" y1="55" x2="-15" y2="85" className="gs"/>
                 <line x1="0" y1="55" x2="15" y2="85" className="gs"/>
               </g>
-              <text x="410" y="162" className="gl">雙手觸碰</text>
+              <text x="410" y="162" className="gl">Hands Touching</text>
               <text x="410" y="182" className="gs2">🤲❤️</text>
               <g transform="translate(580,60)">
                 <circle cx="0" cy="0" r="12" className="gh"/>
@@ -444,7 +457,7 @@ export default function App() {
                 <line x1="0" y1="55" x2="-15" y2="85" className="gs"/>
                 <line x1="0" y1="55" x2="15" y2="85" className="gs"/>
               </g>
-              <text x="580" y="162" className="gl">雙手舉高放下</text>
+              <text x="580" y="162" className="gl">Raise & Lower Hands</text>
               <text x="580" y="182" className="gs2">🦅👇</text>
             </svg>
         </div>
@@ -533,12 +546,12 @@ export default function App() {
               color: showGuide ? "#FF6B2B" : "#fff",
               fontSize: "0.75rem", fontFamily: "monospace", whiteSpace: "nowrap",
             }}>
-            動作指引
+            Action Guide
           </button>
 
           {/* 回饋按鈕 */}
           <a href="https://forms.gle/fmD9XYixYHLLrjQP6" target="_blank" rel="noopener noreferrer"
-            className="feedback-btn" title="填寫回饋表單">📮</a>
+            className="feedback-btn" title="Submit Feedback">📮</a>
 
           {/* YT URL 輸入框 */}
           <input type="text" value={inputUrl} onChange={handleUrlChange}
@@ -549,12 +562,13 @@ export default function App() {
           <div className={`music-trigger${isMenuOpen ? " open" : ""}`}
             onClick={() => { setIsMenuOpen(v => !v); setExpandedCat(null); }}>
             <span>♩</span>
-            {windowWidth >= 768 && <span>點歌</span>}
+            {windowWidth >= 768 && <span>Song Selection</span>}
             <span className="arr">▼</span>
           </div>
 
           {/* 下拉面板 */}
           {isMenuOpen && renderMusicPanel()}
+          
 
           {/* 播放器開關 */}
           <div className={`show-btn${showMusic ? " on" : ""}`}

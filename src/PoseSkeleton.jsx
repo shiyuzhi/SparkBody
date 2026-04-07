@@ -258,6 +258,7 @@ export default function PoseSkeleton({
       },
       width: 640,
       height: 360,
+      frameRate: 30, 
     });
     camera.start();
 
