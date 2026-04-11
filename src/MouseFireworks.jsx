@@ -161,7 +161,15 @@ export default function MouseFireworks({ isLowEnd }) {
       lastFireTime.current = now;
       comboCount.current = (now - lastClickTime.current < 5000) ? comboCount.current + 1 : 0;
       lastClickTime.current = now;
-      fire({ x: e.clientX, y: e.clientY }, comboCount.current);
+
+      // 音效同步觸發（純 Web Audio，無 DOM 操作，不影響 INP）
+      playLaunchSound(comboCount.current);
+
+      // DOM 操作移出 input event 臨界路徑，降低 INP
+      const capturedX = e.clientX;
+      const capturedY = e.clientY;
+      const capturedCombo = comboCount.current;
+      setTimeout(() => fire({ x: capturedX, y: capturedY }, capturedCombo), 0);
     };
     window.addEventListener("pointerdown", handleGlobalClick);
     return () => window.removeEventListener("pointerdown", handleGlobalClick);
@@ -172,7 +180,6 @@ export default function MouseFireworks({ isLowEnd }) {
     if (!stage) return;
     if (activeCount.current >= 6) return; // 最多同時 6 個
     activeCount.current++;
-    playLaunchSound(combo);
 
     const firework = document.createElementNS("http://www.w3.org/2000/svg", "g");
     const trail = document.createElementNS("http://www.w3.org/2000/svg", "g");

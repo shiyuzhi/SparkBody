@@ -168,9 +168,9 @@ export default function Fireworks({ poseDataRef, gestureDataRef, isLowEnd, showD
 
   useEffect(() => {
     const baseUrl   = import.meta.env.BASE_URL;
-    const soundPath = `${baseUrl}/sounds/FWSnare.wav`.replace(/\/+/g, "/");
+    const soundPath = `${baseUrl}/sounds/FWSnare.mp3`.replace(/\/+/g, "/");
     drumKit.loadBuffer("boom", soundPath);
-    const birdPath = `${baseUrl}/sounds/bird.wav`.replace(/\/+/g, "/");
+    const birdPath = `${baseUrl}/sounds/bird.mp3`.replace(/\/+/g, "/");
     drumKit.loadBuffer("bird", birdPath);
   }, []);
 
