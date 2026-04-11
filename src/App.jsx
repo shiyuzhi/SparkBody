@@ -366,11 +366,11 @@ export default function App() {
           font-size:0.95rem; text-decoration:none; transition:all 0.18s;
           animation:fb-pulse 3s ease-in-out infinite;
         }
-        .feedback-btn:hover {
-          background:rgba(100,220,255,0.1); border-color:rgba(100,220,255,0.45);
-          box-shadow:0 0 10px rgba(100,220,255,0.2); transform:scale(1.1);
-        }
         @keyframes fb-pulse {
+          0%,100% { transform: scale(1); opacity: 0.7; }
+          50%      { transform: scale(1.08); opacity: 1; }
+        }
+        
           0%,100% { box-shadow:0 0 0 0 rgba(100,220,255,0); }
           50%      { box-shadow:0 0 0 4px rgba(100,220,255,0.1); }
         }
