@@ -243,7 +243,7 @@ export default function App() {
   );
 
   return (
-    <div style={{ height: "100dvh", width: "100vw", backgroundColor: "black", overflow: "hidden", position: "relative" }}>
+    <main style={{ height: "100dvh", width: "100vw", backgroundColor: "black", overflow: "hidden", position: "relative" }}>
 
       {/* ✅ 橫向遊玩提示 - 只在手機顯示，點按關閉或 5 秒後自動消失 */}
       {showLandscapeHint && windowWidth < 600 && (
@@ -482,6 +482,7 @@ export default function App() {
           {!isLandscapePhone && (
             <input type="range" min="0.3" max="2" step="0.1" value={skeletonScale}
               onChange={(e) => setSkeletonScale(parseFloat(e.target.value))}
+              aria-label="Skeleton scale"
               style={{ width: "50px" }} />
           )}
           <button
@@ -603,6 +604,6 @@ export default function App() {
             initialPosition={{ top: 20, left: windowWidth - (isLandscapePhone ? 260 : 340) }} />
         </Suspense>
       )}
-    </div>
+    </main>
   );
 }
