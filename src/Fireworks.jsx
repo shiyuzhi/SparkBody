@@ -167,12 +167,18 @@ export default function Fireworks({ poseDataRef, gestureDataRef, isLowEnd, showD
   const birdTemplate = useRef(createBirdTemplate());
 
   useEffect(() => {
-    const baseUrl   = import.meta.env.BASE_URL;
-    const soundPath = `${baseUrl}/sounds/FWSnare.mp3`.replace(/\/+/g, "/");
-    drumKit.loadBuffer("boom", soundPath);
-    const birdPath = `${baseUrl}/sounds/bird.mp3`.replace(/\/+/g, "/");
-    drumKit.loadBuffer("bird", birdPath);
-  }, []);
+  // 直接定義路徑，不需要過度 replace
+  // Vite 的 public 內容在開發時永遠對應到 /
+  const loadSound = (key, path) => {
+    // 確保路徑以 / 開頭，且不會因為 BASE_URL 導致雙斜線
+    const fullPath = (import.meta.env.BASE_URL + path).replace(/\/+/g, "/");
+    console.log(`Loading ${key} from: ${fullPath}`); // 檢查輸出的路徑是否正確
+    drumKit.loadBuffer(key, fullPath);
+  };
+
+  loadSound("boom", "/sounds/FWSnare.mp3");
+  loadSound("bird", "/sounds/bird.mp3");
+}, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;

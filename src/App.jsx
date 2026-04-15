@@ -9,6 +9,7 @@ import MouseFireworks from "./MouseFireworks";
 //  修正：加入 initLogger，確保 Logger 單例被正確初始化
 import { initLogger, flushImmediately, setUserId, setMode, generateNextUserId, resetSessionId } from "./AffectiveLogger";
 import { resetLMA } from "./lmaEngine";
+// import LMADemoPanel from "./LMADemoPanel";
 
 // Code Splitting - 延後加載重型組件
 const DraggableYouTube = lazy(() => import("./DraggableyouTube"));
@@ -50,7 +51,7 @@ export default function App() {
   const [isConfirmed, setIsConfirmed] = useState(false);
   const [sessionKey, setSessionKey] = useState(0);
   const [syncState, setSyncState] = useState({ status: "IDLE", pendingCount: 0, isOffline: false });
-
+  const [showDemo, setShowDemo] = useState(false);
   //  橫向遊玩提示
   const [showLandscapeHint, setShowLandscapeHint] = useState(true);
 
@@ -271,6 +272,7 @@ export default function App() {
         mode={`B-${sessionKey}`} onLMAUpdate={(lma) => { lmaDataRef.current = lma; }}
         /* onFrameReady={(canvas) => frameCallbackRef.current?.(canvas)} // 🚫 CanvasRecorder 已停用 */ />
 
+
       <DraggableSkeleton scale={skeletonScale} visible={showSkeleton} onHide={() => setShowSkeleton(false)}
         width={isLandscapePhone ? windowHeight * 0.8 : 600}
         height={isLandscapePhone ? windowHeight * 0.8 : 600}
@@ -282,7 +284,8 @@ export default function App() {
 
       {/*  鼠標 Fireworks - 低端模式不顯示 */}
       {!isLowEnd && <MouseFireworks isLowEnd={isLowEnd} />}
-
+      {/*showDebug && <LMADemoPanel lmaDataRef={lmaDataRef} />}
+      {showDemo && <LMADemoPanel />}
       {/* ── CSS ── */}
       <style>{`
         @keyframes spin {
@@ -502,12 +505,14 @@ export default function App() {
               fontSize: "0.65rem", cursor: "pointer", fontFamily: "monospace", whiteSpace: "nowrap" }}>
             {isConfirmed ? `👤 ${currentUserId}` : "Set Participant"}
           </button>
+          
           {isConfirmed && (
             <button onClick={resetSession} className="btn btn-sm btn-outline-warning"
               style={{ fontSize: "0.6rem", padding: "2px 5px" }}>
               NEXT ▶
             </button>
           )}
+        
           <div onClick={() => setShowDebug(v => !v)}
             style={{ background: showDebug ? "rgba(0,239,255,0.15)" : "rgba(255,255,255,0.05)",
               border: `1px solid ${showDebug ? "#0ef" : "#444"}`, borderRadius: 6,
@@ -515,7 +520,16 @@ export default function App() {
               fontSize: "0.65rem", cursor: "pointer", fontFamily: "monospace" }}>
             {showDebug ? "LMA ✓" : "LMA"}
           </div>
-
+          {/*<div onClick={() => setShowDemo(v => !v)}
+            style={{
+              background: showDemo ? "rgba(0,239,255,0.15)" : "rgba(255,255,255,0.05)",
+              border: `1px solid ${showDemo ? "#0ef" : "#444"}`, borderRadius: 6,
+              padding: "3px 7px", color: showDemo ? "#0ef" : "#555",
+              fontSize: "0.65rem", cursor: "pointer", fontFamily: "monospace"
+            }}>
+            {showDemo ? "DEMO ✓" : "DEMO"}
+          </div>
+          */}
           <div className="tb-sep" />
 
           {/* 🚫 錄影功能已停用
