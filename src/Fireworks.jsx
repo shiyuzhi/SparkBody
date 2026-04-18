@@ -4,7 +4,7 @@ import { drumKit } from "./Audio";
 import { extractLMA, resetLMA } from "./lmaEngine";
 import { logActivity } from "./AffectiveLogger";
 
-// ─── Particle class（原版完整保留）────────────────────────────────────────────
+// ─── Particle class ────────────────────────────────────────────────────────────
 class Particle {
   constructor(x, y, color, type = "normal", isLowEnd = false) {
     this.x = x; this.y = y; this.color = color;
@@ -40,12 +40,14 @@ class Particle {
     this.alpha -= this.decay;
   }
 
+  // ✅ save/restore 已移除，由 render loop 批次管理 compositeOperation
   draw(ctx) {
     if (this.alpha <= 0.05) return;
+    ctx.globalAlpha = this.alpha;
+    ctx.fillStyle = this.color;
+
     if (this.isLowEnd) {
-      ctx.globalAlpha = this.alpha;
       ctx.globalCompositeOperation = "source-over";
-      ctx.fillStyle = this.color;
       if (this.type === "explosion" || this.type === "ray") {
         ctx.beginPath();
         ctx.moveTo(this.x - this.size, this.y); ctx.lineTo(this.x + this.size, this.y);
@@ -55,59 +57,41 @@ class Particle {
         ctx.beginPath(); ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2); ctx.fill();
       }
     } else {
-      ctx.save();
-      ctx.globalAlpha = this.alpha; ctx.fillStyle = this.color;
       ctx.globalCompositeOperation = "lighter";
-      if (this.type === "heart" || this.type === "explosion") {
-        // shadowBlur disabled for performance
-      }
       ctx.beginPath(); ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2); ctx.fill();
-      ctx.restore();
     }
   }
 }
 
-// ─── Bird template（原版完整保留）─────────────────────────────────────────────
+// ─── Bird template ─────────────────────────────────────────────────────────────
 function createBirdTemplate() {
   const t = [];
-  // 身體：短而圓
   for (let i = 0; i < 120; i++) {
     const r = Math.random();
     const halfW = Math.sin(r * Math.PI) * 14;
     t.push({ baseX: (r - 0.45) * 45, baseY: (Math.random() - 0.5) * halfW, color: r < 0.6 ? "#FFFFFF" : "#D0D0D0" });
   }
-  // 尾巴：先水平延伸，末端才扇開
   for (let i = 0; i < 80; i++) {
     const tt = Math.random();
     const x = 20 + tt * 25;
     const fanAngle = tt * tt * 20;
     t.push({ baseX: x, baseY: (Math.random() - 0.5) * fanAngle, color: tt > 0.6 ? "#AAAAAA" : "#DDDDDD" });
   }
-  // 頭：靠左，圓
   for (let i = 0; i < 50; i++) {
     const rad = Math.random() * Math.PI * 2; const dist = Math.random();
     t.push({ baseX: -22 + Math.cos(rad) * 11 * dist, baseY: -8 + Math.sin(rad) * 11 * dist, color: "#FFFFFF" });
   }
-  // 嘴巴：黃色，長
   for (let i = 0; i < 15; i++)
     t.push({ baseX: -33 - Math.random() * 18, baseY: -7 + (Math.random() - 0.5) * 2.5, color: "#FFCC00" });
-  // 眼睛
-  // 調整後的眼睛：更大、更紮實
-  for (let i = 0; i < 10; i++) { // 增加點數到 20，讓顏色更飽滿
-    t.push({ 
-      baseX: -28 + Math.random() * 8, // 起點往左移一點，寬度擴大到 8
-      baseY: -15 + Math.random() * 8, // 起點往上移一點，高度擴大到 8
-      color: "#222222" 
-    });
+  for (let i = 0; i < 10; i++) {
+    t.push({ baseX: -28 + Math.random() * 8, baseY: -15 + Math.random() * 8, color: "#222222" });
   }
-  // 左翅：∩ 弧形，尖端收窄
   for (let i = 0; i < 180; i++) {
     const distX = Math.random() * 95; const tt = distX / 95;
     const arcY = Math.sin(tt * Math.PI) * -55;
     const spread = (1 - tt) * 10 + tt * 1.5;
     t.push({ baseX: -8 - distX, baseY: arcY + (Math.random() - 0.5) * spread, color: tt > 0.5 ? "#CCCCCC" : "#EEEEEE" });
   }
-  // 右翅：∩ 弧形，尖端收窄
   for (let i = 0; i < 180; i++) {
     const distX = Math.random() * 95; const tt = distX / 95;
     const arcY = Math.sin(tt * Math.PI) * -55;
@@ -118,31 +102,26 @@ function createBirdTemplate() {
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
-// ✅ INP 優化版本：接收 Ref 而不是 Props，避免每秒 30 次重新渲染
 export default function Fireworks({ poseDataRef, gestureDataRef, isLowEnd, showDebug = false, mode = "B", onLMAUpdate, onFrameReady }) {
   const canvasRef    = useRef(null);
-  const debugRef     = useRef(null);  // overlay div
   const particles    = useRef([]);
-  const lmaRef       = useRef(null);  // ← 最新 LMA 計算結果
+  const lmaRef       = useRef(null);
   const baselineLoggedRef = useRef(false);
   const lastContinuousLogTime = useRef(Date.now());
   const lastVictoryLogTime = useRef({ left: 0, right: 0 });
   const onFrameReadyRef = useRef(onFrameReady);
   useEffect(() => { onFrameReadyRef.current = onFrameReady; }, [onFrameReady]);
-  
-  // ✅ isLowEnd / showDebug 改用 Ref，避免切換時重新初始化整個 RAF
+
   const isLowEndRef = useRef(isLowEnd);
-  const pendingLowEndRef = useRef(null); // null = 無待切換，true/false = 待切換目標值
+  const pendingLowEndRef = useRef(null);
 
   useEffect(() => {
     const next = isLowEnd;
     const curr = isLowEndRef.current;
     if (next === curr) return;
     if (!next) {
-      // LITE → HD：先清粒子，下一幀 render loop 裡再正式切換
       pendingLowEndRef.current = false;
     } else {
-      // HD → LITE：直接切，粒子少不會爆量
       isLowEndRef.current = true;
     }
   }, [isLowEnd]);
@@ -150,7 +129,6 @@ export default function Fireworks({ poseDataRef, gestureDataRef, isLowEnd, showD
   const showDebugRef = useRef(showDebug);
   useEffect(() => { showDebugRef.current = showDebug; }, [showDebug]);
 
-  // Mode 切換 → 重設 LMA baseline（避免 Mode A 的 baseline 污染 Mode B）
   useEffect(() => {
     resetLMA();
     baselineLoggedRef.current = false;
@@ -167,18 +145,12 @@ export default function Fireworks({ poseDataRef, gestureDataRef, isLowEnd, showD
   const birdTemplate = useRef(createBirdTemplate());
 
   useEffect(() => {
-  // 直接定義路徑，不需要過度 replace
-  // Vite 的 public 內容在開發時永遠對應到 /
-  const loadSound = (key, path) => {
-    // 確保路徑以 / 開頭，且不會因為 BASE_URL 導致雙斜線
-    const fullPath = (import.meta.env.BASE_URL + path).replace(/\/+/g, "/");
-    console.log(`Loading ${key} from: ${fullPath}`); // 檢查輸出的路徑是否正確
-    drumKit.loadBuffer(key, fullPath);
-  };
-
-  loadSound("boom", "/sounds/FWSnare.mp3");
-  loadSound("bird", "/sounds/bird.mp3");
-}, []);
+    const baseUrl   = import.meta.env.BASE_URL;
+    const soundPath = `${baseUrl}/sounds/FWSnare.mp3`.replace(/\/+/g, "/");
+    drumKit.loadBuffer("boom", soundPath);
+    const birdPath = `${baseUrl}/sounds/bird.mp3`.replace(/\/+/g, "/");
+    drumKit.loadBuffer("bird", birdPath);
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -186,12 +158,17 @@ export default function Fireworks({ poseDataRef, gestureDataRef, isLowEnd, showD
     const ctx = canvas.getContext("2d", { alpha: true });
     let raf;
 
-    // ── Helper: log LMA shorthand ────────────────────────────────────────────
-    // coords 由 render 迴圈在當幀直接封裝後傳入，避免 Ref 時序問題
+    // ✅ ResizeObserver 取代每幀 DOM read
+    const ro = new ResizeObserver(entries => {
+      const { width, height } = entries[0].contentRect;
+      canvas.width  = width;
+      canvas.height = height;
+    });
+    ro.observe(canvas);
+
     const log = (activity, note = "", coords = {}) => {
       const lma = lmaRef.current;
       if (!lma) return;
-
       logActivity({
         activity,
         shape_n:       lma.n.shape  || 0,
@@ -200,25 +177,17 @@ export default function Fireworks({ poseDataRef, gestureDataRef, isLowEnd, showD
         kt:            lma.kt       || 0,
         baselineReady: lma.baselineReady,
         note,
-        lh_x: coords.lh_x ?? null,
-        lh_y: coords.lh_y ?? null,
-        rh_x: coords.rh_x ?? null,
-        rh_y: coords.rh_y ?? null,
-        ls_x: coords.ls_x ?? null,
-        ls_y: coords.ls_y ?? null,
-        rs_x: coords.rs_x ?? null,
-        rs_y: coords.rs_y ?? null,
+        lh_x: coords.lh_x ?? null, lh_y: coords.lh_y ?? null,
+        rh_x: coords.rh_x ?? null, rh_y: coords.rh_y ?? null,
+        ls_x: coords.ls_x ?? null, ls_y: coords.ls_y ?? null,
+        rs_x: coords.rs_x ?? null, rs_y: coords.rs_y ?? null,
       });
-
-      if (showDebugRef.current) {
+      if (showDebugRef.current)
         console.log(`[Logger] ${activity} | lh:(${coords.lh_x?.toFixed(3)}, ${coords.lh_y?.toFixed(3)})`);
-      }
     };
 
-    // nowCoords 在 render 迴圈開頭建立，供所有 log() 呼叫使用
     let nowCoords = {};
 
-    // ── Heart helper（原版保留）──────────────────────────────────────────────
     const createSmallHeart = (centerX, centerY, screenScale = 1) => {
       const pan = (centerX / canvas.width) * 2 - 1;
       drumKit.play("boom", { volume: 0.3, detune: 600, pan });
@@ -233,7 +202,6 @@ export default function Fireworks({ poseDataRef, gestureDataRef, isLowEnd, showD
         p.vx = (Math.random() - 0.5) * 0.5 * screenScale; p.vy = (Math.random() - 0.5) * 0.5 * screenScale;
         particles.current.push(p);
       }
-      // ★ Log heart event
       const _p = poseDataRef.current;
       log("Heart", "", {
         lh_x: typeof _p?.leftHand?.x      === "number" ? _p.leftHand.x      : null,
@@ -248,30 +216,33 @@ export default function Fireworks({ poseDataRef, gestureDataRef, isLowEnd, showD
     };
 
     // ── Render loop ──────────────────────────────────────────────────────────
-    const render = () => {
-      // LITE → HD 延遲切換：等粒子陣列清空後才正式切換
+    const lastFrameTime = { t: 0 };
+
+    const render = (timestamp) => {
+      // ✅ Frame budget：33.3ms 上限保護，超過 60fps 才跳幀
+      if (timestamp - lastFrameTime.t < 33.3) {
+        raf = requestAnimationFrame(render);
+        return;
+      }
+      lastFrameTime.t = timestamp;
+
+      // LITE → HD 延遲切換
       if (pendingLowEndRef.current === false) {
         particles.current = [];
         isLowEndRef.current = false;
         pendingLowEndRef.current = null;
       }
 
-      if (canvas.width !== canvas.clientWidth || canvas.height !== canvas.clientHeight) {
-        canvas.width = canvas.clientWidth; canvas.height = canvas.clientHeight;
-      }
-      
-    
       const w = canvas.width, h = canvas.height;
       if (w === 0 || h === 0) { raf = requestAnimationFrame(render); return; }
       const scale = Math.min(w, h) / 900;
 
       ctx.globalCompositeOperation = "source-over";
+      ctx.globalAlpha = 1;
       ctx.fillStyle = isLowEndRef.current ? "rgba(0,0,0,0.35)" : "rgba(0,0,0,0.15)";
       ctx.fillRect(0, 0, w, h);
 
       const currentPose = poseDataRef.current;
-
-      // 第一道防線：兩隻手都不見才跳過（支援單手互動）
       const hasLeftHand  = currentPose?.leftHand  && currentPose.leftHand.visibility  > 0.5;
       const hasRightHand = currentPose?.rightHand && currentPose.rightHand.visibility > 0.5;
       if (!currentPose || (!hasLeftHand && !hasRightHand)) {
@@ -279,11 +250,9 @@ export default function Fireworks({ poseDataRef, gestureDataRef, isLowEnd, showD
         return;
       }
 
-      // 安全取出座標
       const { leftHand, rightHand, leftKnee, rightKnee,
               leftElbow, rightElbow, leftShoulder, rightShoulder } = currentPose;
 
-      // 當幀座標包，直接傳給所有 log() 呼叫，避免 Ref 時序問題
       nowCoords = {
         lh_x: typeof leftHand?.x      === "number" ? leftHand.x      : null,
         lh_y: typeof leftHand?.y      === "number" ? leftHand.y      : null,
@@ -295,141 +264,134 @@ export default function Fireworks({ poseDataRef, gestureDataRef, isLowEnd, showD
         rs_y: typeof rightShoulder?.y === "number" ? rightShoulder.y : null,
       };
 
-      // ══════════════════════════════════════════════════════════════════════
-      // ★ 區塊一：LMA 計算與數據紀錄 (不影響煙火)
-      // ══════════════════════════════════════════════════════════════════════
+      // ── LMA ─────────────────────────────────────────────────────────────
       const lma = extractLMA(currentPose);
       if (lma) {
         lmaRef.current = lma;
         onLMAUpdate?.(lma);
-
         if (lma.baselineReady && !baselineLoggedRef.current) {
           baselineLoggedRef.current = true;
           log("Baseline_End", "baseline calibrated", nowCoords);
         }
-
         const now = Date.now();
         if (lma.baselineReady && (now - lastContinuousLogTime.current > 30000)) {
           log("Dance_Continuous", "30s_Interval_AutoLog", nowCoords);
           lastContinuousLogTime.current = now;
         }
-
       }
-      // ══════════════════════════════════════════════════════════════════════
-      // 手部粒子 + 手勢（修正版：互斥判定與能見度優化）
-      // ══════════════════════════════════════════════════════════════════════
-      ["leftHand", "rightHand"].forEach((key) => {
-        const pos = currentPose?.[key];
-        // 修正：放寬門檻至 0.45，避免雙手模式下因效能波動導致單手消失
-        if (!pos || pos.visibility <= 0.45) return; 
 
-        const x = (1 - pos.x) * w;
-        const y = pos.y * h;
-        const side = key === "leftHand" ? "left" : "right";
-        const sideKey = side;
-        const gesture = currentPose?.[side + "HandGesture"];
-        
-        if (!status.current[side + "Color"]) {
-          const hue = Math.floor(Math.random() * 360);
-          status.current[side + "Color"] = `hsl(${hue}, 100%, 60%)`;
-        }
-        const color = status.current[side + "Color"];
-        const pan = (x / w) * 2 - 1;
+      // ── 手部粒子 + 手勢（✅ forEach → if block）────────────────────────
+      // LEFT
+      const lPos = currentPose?.leftHand;
+      if (lPos && lPos.visibility > 0.45) {
+        const lx = (1 - lPos.x) * w, ly = lPos.y * h;
+        const pan = (lx / w) * 2 - 1;
+        const gesture = currentPose?.leftHandGesture;
+        if (!status.current.leftColor) status.current.leftColor = `hsl(${Math.floor(Math.random() * 360)}, 100%, 60%)`;
+        particles.current.push(new Particle(lx, ly, status.current.leftColor, "normal", isLowEndRef.current));
 
-        // 常態粒子發散
-        particles.current.push(new Particle(x, y, color, "normal", isLowEndRef.current));
-
-        // --- 手勢邏輯判定區 (修正為互斥結構) ---
         if (gesture === "Victory") {
-          // 1. 勝利手勢判定
           if (Math.random() > 0.8) drumKit.play("boom", { volume: 0.2, detune: 1000, pan });
-          
           const now = Date.now();
-          if (now - lastVictoryLogTime.current[sideKey] > 2000) {
-            log("Victory", sideKey, nowCoords);
-            lastVictoryLogTime.current[sideKey] = now;
-          }
-
+          if (now - lastVictoryLogTime.current.left > 2000) { log("Victory", "left", nowCoords); lastVictoryLogTime.current.left = now; }
           for (let i = 0; i < (isLowEndRef.current ? 1 : 3); i++) {
-            const rayColor = i % 2 === 0 ? "#FFF" : "#00FFFF";
-            const p = new Particle(x, y, rayColor, "ray", isLowEndRef.current);
+            const p = new Particle(lx, ly, i % 2 === 0 ? "#FFF" : "#00FFFF", "ray", isLowEndRef.current);
             const a = Math.random() * Math.PI * 2;
             p.vx = Math.cos(a) * 10 * scale; p.vy = Math.sin(a) * 10 * scale;
             particles.current.push(p);
           }
-          // 確保比 Ya 的時候，握拳狀態與 Ready 狀態被鎖定，不產生誤觸
-          status.current[side + "Count"] = 0;
-          status.current[side + "Ready"] = false;
-
+          status.current.leftCount = 0; status.current.leftReady = false;
         } else if (gesture === "Closed_Fist") {
-          // 2. 握拳判定 (蓄力中)
-          status.current[side + "Count"] = (status.current[side + "Count"] || 0) + 1;
-          if (status.current[side + "Count"] > 5) { // 穩定握拳超過 3 幀才算準備好了
-            status.current[side + "Ready"] = true;
-          }
-
-      } else if (gesture === "Open_Palm") {
-          status.current[side + "Count"] = 0;
-          if (status.current[side + "Ready"]) {
-            const newHue = Math.floor(Math.random() * 360);
-            status.current[side + "Color"] = `hsl(${newHue}, 100%, 60%)`;
-            const explosionColor = status.current[side + "Color"];
+          status.current.leftCount = (status.current.leftCount || 0) + 1;
+          if (status.current.leftCount > 5) status.current.leftReady = true;
+        } else if (gesture === "Open_Palm") {
+          status.current.leftCount = 0;
+          if (status.current.leftReady) {
+            status.current.leftColor = `hsl(${Math.floor(Math.random() * 360)}, 100%, 60%)`;
             drumKit.play("boom", { volume: 0.6, detune: 0, pan });
-
-            // ── KT Mapping ──────────────────────────────────────
-            const lma     = lmaRef.current;
-            const kt      = lma?.kt      ?? 0.5;
-            const weight  = lma?.n?.weight ?? 0.5;
-            const spread  = lma?.n?.shape  ?? 0.5;
-            const count   = Math.round(20 + kt * 60);        // 20~80 顆
-            const speedSc = 0.5 + weight * 1.5;              // 速度倍率
-            const angleR  = Math.PI * (0.5 + spread * 1.5);  // 角度範圍
-            // ────────────────────────────────────────────────────
-
+            const lmaC = lmaRef.current;
+            const kt = lmaC?.kt ?? 0.5, weight = lmaC?.n?.weight ?? 0.5, spread = lmaC?.n?.shape ?? 0.5;
+            const count = Math.round(20 + kt * 60), speedSc = 0.5 + weight * 1.5, angleR = Math.PI * (0.5 + spread * 1.5);
             for (let i = 0; i < (isLowEndRef.current ? 8 : count); i++) {
-              const p = new Particle(x, y, explosionColor, "explosion", isLowEndRef.current);
-              const angle = (Math.random() - 0.5) * angleR * 2;
-              const speed = (Math.random() * 4 + 4) * speedSc;
-              p.vx = Math.cos(angle) * speed;
-              p.vy = Math.sin(angle) * speed;
+              const p = new Particle(lx, ly, status.current.leftColor, "explosion", isLowEndRef.current);
+              const angle = (Math.random() - 0.5) * angleR * 2, speed = (Math.random() * 4 + 4) * speedSc;
+              p.vx = Math.cos(angle) * speed; p.vy = Math.sin(angle) * speed;
               particles.current.push(p);
             }
-
-            log("Fireworks_Explosion", side, nowCoords);
-            status.current[side + "Ready"] = false;
+            log("Fireworks_Explosion", "left", nowCoords);
+            status.current.leftReady = false;
           }
         } else {
-          // 4. 其餘狀態 (None/Lost) 緩慢重置
-          status.current[side + "Count"] = 0;
-          status.current[side + "Ready"] = false;
+          status.current.leftCount = 0; status.current.leftReady = false;
         }
-      });
-       
-      // ══════════════════════════════════════════════════════════════════════
-      // 雙手碰 → 愛心（精準判定版）
-      // ══════════════════════════════════════════════════════════════════════
+      }
+
+      // RIGHT
+      const rPos = currentPose?.rightHand;
+      if (rPos && rPos.visibility > 0.45) {
+        const rx = (1 - rPos.x) * w, ry = rPos.y * h;
+        const pan = (rx / w) * 2 - 1;
+        const gesture = currentPose?.rightHandGesture;
+        if (!status.current.rightColor) status.current.rightColor = `hsl(${Math.floor(Math.random() * 360)}, 100%, 60%)`;
+        particles.current.push(new Particle(rx, ry, status.current.rightColor, "normal", isLowEndRef.current));
+
+        if (gesture === "Victory") {
+          if (Math.random() > 0.8) drumKit.play("boom", { volume: 0.2, detune: 1000, pan });
+          const now = Date.now();
+          if (now - lastVictoryLogTime.current.right > 2000) { log("Victory", "right", nowCoords); lastVictoryLogTime.current.right = now; }
+          for (let i = 0; i < (isLowEndRef.current ? 1 : 3); i++) {
+            const p = new Particle(rx, ry, i % 2 === 0 ? "#FFF" : "#00FFFF", "ray", isLowEndRef.current);
+            const a = Math.random() * Math.PI * 2;
+            p.vx = Math.cos(a) * 10 * scale; p.vy = Math.sin(a) * 10 * scale;
+            particles.current.push(p);
+          }
+          status.current.rightCount = 0; status.current.rightReady = false;
+        } else if (gesture === "Closed_Fist") {
+          status.current.rightCount = (status.current.rightCount || 0) + 1;
+          if (status.current.rightCount > 5) status.current.rightReady = true;
+        } else if (gesture === "Open_Palm") {
+          status.current.rightCount = 0;
+          if (status.current.rightReady) {
+            status.current.rightColor = `hsl(${Math.floor(Math.random() * 360)}, 100%, 60%)`;
+            drumKit.play("boom", { volume: 0.6, detune: 0, pan });
+            const lmaC = lmaRef.current;
+            const kt = lmaC?.kt ?? 0.5, weight = lmaC?.n?.weight ?? 0.5, spread = lmaC?.n?.shape ?? 0.5;
+            const count = Math.round(20 + kt * 60), speedSc = 0.5 + weight * 1.5, angleR = Math.PI * (0.5 + spread * 1.5);
+            for (let i = 0; i < (isLowEndRef.current ? 8 : count); i++) {
+              const p = new Particle(rx, ry, status.current.rightColor, "explosion", isLowEndRef.current);
+              const angle = (Math.random() - 0.5) * angleR * 2, speed = (Math.random() * 4 + 4) * speedSc;
+              p.vx = Math.cos(angle) * speed; p.vy = Math.sin(angle) * speed;
+              particles.current.push(p);
+            }
+            log("Fireworks_Explosion", "right", nowCoords);
+            status.current.rightReady = false;
+          }
+        } else {
+          status.current.rightCount = 0; status.current.rightReady = false;
+        }
+      }
+
+      // ── 雙手碰 → 愛心 ────────────────────────────────────────────────────
       if (leftHand?.visibility > 0.7 && rightHand?.visibility > 0.7) {
         const lx = (1 - leftHand.x) * w, ly = leftHand.y * h;
         const rx = (1 - rightHand.x) * w, ry = rightHand.y * h;
         const distance2D = Math.sqrt((rx - lx) ** 2 + (ry - ly) ** 2);
-
-        if (distance2D < 90) { // 距離放寬到 90px，手晃一下不會斷
+        if (distance2D < 90) {
           if (!status.current.handsTouching) {
             status.current.touchCounter++;
-            if (status.current.touchCounter >= 3) { // 3 幀就夠，不用等 8 幀
+            if (status.current.touchCounter >= 3) {
               createSmallHeart((lx + rx) / 2, (ly + ry) / 2, scale);
               status.current.handsTouching = true;
-              status.current.touchCounter = 0; // 重置，下次才能再觸發
+              status.current.touchCounter = 0;
             }
           }
-        } else if (distance2D > 130) { // 分開夠遠才重置
+        } else if (distance2D > 130) {
           status.current.touchCounter = 0;
           status.current.handsTouching = false;
         }
       }
 
-      // ══════════════════════════════════════════════════════════════════════
-      // 🦅 Gull Flap (海鷗拍翅) - 終極防誤觸版
+      // ── 🦅 Gull Flap ──────────────────────────────────────────────────────
       if (leftHand.visibility > 0.8 && rightHand.visibility > 0.8 && leftShoulder && rightShoulder) {
         const now = Date.now();
         const bStatus = birdStatus.current;
@@ -437,31 +399,21 @@ export default function Fireworks({ poseDataRef, gestureDataRef, isLowEnd, showD
         const rightDY = (bStatus.prevRY ?? rightHand.y) - rightHand.y;
         bStatus.prevLY = leftHand.y; bStatus.prevRY = rightHand.y;
 
-        // ★ 動態比例尺
-        const shoulderWidth = Math.abs(leftShoulder.x - rightShoulder.x) || 0.1; 
+        const shoulderWidth = Math.abs(leftShoulder.x - rightShoulder.x) || 0.1;
         const wingspan = Math.abs(leftHand.x - rightHand.x);
         const leftArmExt = Math.abs(leftHand.x - leftShoulder.x);
         const rightArmExt = Math.abs(rightHand.x - rightShoulder.x);
-
-        // ★ 判定區域：手要伸得夠開 (1.1 倍) 且 總寬度夠 (2.5 倍)
-        const isExtended = leftArmExt > shoulderWidth * 1.1 && rightArmExt > shoulderWidth * 1.1; 
-        const MIN_WINGSPAN = shoulderWidth * 2.5; 
-
-        // ★ 關鍵修正 1：手必須高於肩膀 (y 軸越小越高)
-        // 這能擋掉平推、慢動作在腰部晃動的誤觸
+        const isExtended = leftArmExt > shoulderWidth * 1.1 && rightArmExt > shoulderWidth * 1.1;
+        const MIN_WINGSPAN = shoulderWidth * 2.5;
         const handsAreHigh = leftHand.y < leftShoulder.y && rightHand.y < rightShoulder.y;
-
-        // ★ 關鍵修正 2：速度門檻設在 0.12 (剛好不難也不簡單)
-        const FLAP_SPEED = shoulderWidth * 0.12; 
+        const FLAP_SPEED = shoulderWidth * 0.12;
         const avgDY = (leftDY + rightDY) / 2;
 
-        // 最終判定：必須 [手舉高] + [夠開] + [往下揮得夠快]
         if (handsAreHigh && wingspan > MIN_WINGSPAN && isExtended && avgDY < -FLAP_SPEED) {
           if (now - (bStatus.lastTriggerTime || 0) > 1000) {
             bStatus.lastTriggerTime = now;
             drumKit.play("bird", { volume: 0.8, detune: -200, duration: 1.5 });
             log("Gull_Flap", "", nowCoords);
-
             const birdX = (1 - (leftHand.x + rightHand.x) / 2) * w;
             const birdY = ((leftHand.y + rightHand.y) / 2) * h;
             const tmpl = birdTemplate.current;
@@ -475,64 +427,54 @@ export default function Fireworks({ poseDataRef, gestureDataRef, isLowEnd, showD
         }
       }
 
-      // 膝蓋粒子（原版保留）
-      [leftKnee, rightKnee].forEach((knee, i) => {
-        if (knee?.visibility > 0.3) {
-          const kneeColor = i === 0 ? "#00FF00" : "#FF8C00";
-          particles.current.push(new Particle((1 - knee.x) * w, knee.y * h, kneeColor, "normal", isLowEndRef.current));
-        }
-      });
+      // ── 膝蓋粒子（✅ forEach → if block）────────────────────────────────
+      if (leftKnee?.visibility > 0.3)
+        particles.current.push(new Particle((1 - leftKnee.x) * w, leftKnee.y * h, "#00FF00", "normal", isLowEndRef.current));
+      if (rightKnee?.visibility > 0.3)
+        particles.current.push(new Particle((1 - rightKnee.x) * w, rightKnee.y * h, "#FF8C00", "normal", isLowEndRef.current));
 
-      // 粒子上限（低端激進降級：400 → 150，削減 62.5%）
+      // 粒子上限
       const maxP = isLowEndRef.current ? 150 : 1000;
-      if (particles.current.length > maxP)
-        particles.current.length = maxP;
+      if (particles.current.length > maxP) particles.current.length = maxP;
 
-      // ── 粒子繪製（Particle.draw() 內部已根據 p.isLowEnd 分支處理）─────────
-      for (let i = particles.current.length - 1; i >= 0; i--) {
+      // ✅ swap-and-pop：單次 pass，無 splice，無陣列搬移
+      let alive = 0;
+      for (let i = 0; i < particles.current.length; i++) {
         const p = particles.current[i];
         p.update();
-        if (p.alpha <= 0.05) particles.current.splice(i, 1);
-        else p.draw(ctx);
+        if (p.alpha > 0.05) {
+          p.draw(ctx);
+          particles.current[alive++] = p;
+        }
       }
+      particles.current.length = alive;
 
-      // ── 手勢 + LMA 數據畫進 Canvas（錄影才抓得到）──
+      // ── HUD（手勢 + LMA）────────────────────────────────────────────────
       if (currentPose) {
         const leftG  = currentPose.leftHandGesture  || "None";
         const rightG = currentPose.rightHandGesture || "None";
-        const toolbarH = 75;
-        const panelH = 60;
-        const lmaH = 105;
+        const toolbarH = 75, panelH = 60;
         const panelY = h - toolbarH - panelH;
-        const lmaY   = h - toolbarH - lmaH;
 
         ctx.globalCompositeOperation = "source-over";
+        ctx.globalAlpha = 1;
         ctx.fillStyle = "rgba(0,0,0,0.7)";
         ctx.fillRect(15, panelY, 210, 60);
-        ctx.strokeStyle = "#444";
-        ctx.lineWidth = 1;
+        ctx.strokeStyle = "#444"; ctx.lineWidth = 1;
         ctx.strokeRect(15, panelY, 210, 60);
 
-        ctx.font = "bold 12px monospace";
-        ctx.textAlign = "left";
-
-        ctx.fillStyle = "#888";
-        ctx.fillText("LEFT", 25, panelY + 20);
+        ctx.font = "bold 12px monospace"; ctx.textAlign = "left";
+        ctx.fillStyle = "#888"; ctx.fillText("LEFT", 25, panelY + 20);
         ctx.fillStyle = leftG !== "None" && leftG !== "Lost" ? "#ffcc00" : "#555";
         ctx.fillText(leftG, 25, panelY + 42);
-
-        ctx.fillStyle = "#333";
-        ctx.fillRect(100, panelY + 10, 1, 40);
-
-        ctx.fillStyle = "#888";
-        ctx.fillText("RIGHT", 115, panelY + 20);
+        ctx.fillStyle = "#333"; ctx.fillRect(100, panelY + 10, 1, 40);
+        ctx.fillStyle = "#888"; ctx.fillText("RIGHT", 115, panelY + 20);
         ctx.fillStyle = rightG !== "None" && rightG !== "Lost" ? "#00e5ff" : "#555";
         ctx.fillText(rightG, 115, panelY + 42);
 
         if (showDebugRef.current && lmaRef.current) {
           const lma = lmaRef.current;
-          const lmaX = 15;
-          const lmaW = 260, lmaH2 = 175;
+          const lmaX = 15, lmaW = 260, lmaH2 = 175;
           const lmaTop = h - toolbarH - lmaH2;
 
           ctx.fillStyle = "rgba(0,0,0,0.85)";
@@ -541,7 +483,6 @@ export default function Fireworks({ poseDataRef, gestureDataRef, isLowEnd, showD
           ctx.lineWidth = 1.5;
           ctx.strokeRect(lmaX, lmaTop, lmaW, lmaH2);
 
-          // 標題
           ctx.font = "bold 15px monospace";
           ctx.fillStyle = lma.baselineReady ? "#0ef" : "#ffd";
           ctx.fillText(
@@ -549,72 +490,49 @@ export default function Fireworks({ poseDataRef, gestureDataRef, isLowEnd, showD
             lmaX + 10, lmaTop + 22
           );
 
-          // 進度條（calibrating 時顯示）
           if (!lma.baselineReady) {
-            ctx.fillStyle = "#333";
-            ctx.fillRect(lmaX + 10, lmaTop + 28, lmaW - 20, 8);
-            ctx.fillStyle = "#f80";
-            ctx.fillRect(lmaX + 10, lmaTop + 28, (lmaW - 20) * lma.baselineProgress, 8);
+            ctx.fillStyle = "#333"; ctx.fillRect(lmaX + 10, lmaTop + 28, lmaW - 20, 8);
+            ctx.fillStyle = "#f80"; ctx.fillRect(lmaX + 10, lmaTop + 28, (lmaW - 20) * lma.baselineProgress, 8);
           }
 
-          // 各項數值 + 進度條（label 在上，bar 在下，數值右對齊）
+          // ✅ drawRow 內冗餘的 const w/h 宣告已移除，使用外層 w/h
           const drawRow = (label, val, color, y) => {
-            // label 左 + 數值右，同一行
-            ctx.font = "13px monospace";const w = canvas.width, h = canvas.height;
-            ctx.fillStyle = "#aaa";
+            ctx.font = "13px monospace"; ctx.fillStyle = "#aaa";
             ctx.fillText(label, lmaX + 10, y);
-            ctx.font = "bold 13px monospace";
-            ctx.fillStyle = "#fff";
+            ctx.font = "bold 13px monospace"; ctx.fillStyle = "#fff";
             ctx.fillText((val || 0).toFixed(3), lmaX + lmaW - 48, y);
-            // 進度條在文字下方 4px
-            ctx.fillStyle = "#333";
-            ctx.fillRect(lmaX + 10, y + 5, lmaW - 20, 9);
+            ctx.fillStyle = "#333"; ctx.fillRect(lmaX + 10, y + 5, lmaW - 20, 9);
             ctx.fillStyle = color;
             ctx.fillRect(lmaX + 10, y + 5, Math.min(lmaW - 20, (val || 0) * (lmaW - 20)), 9);
           };
 
-          // 每行間距 38px（13px字 + 9px條 + 16px間距）
           drawRow("SPACE",  lma.n.shape,  "#4ef", lmaTop + 52);
           drawRow("WEIGHT", lma.n.weight, "#f84", lmaTop + 90);
           drawRow("FLOW",   lma.n.flow,   "#8f8", lmaTop + 128);
-
-          ctx.fillStyle = "#f9a";
-          ctx.font = "bold 15px monospace";
+          ctx.fillStyle = "#f9a"; ctx.font = "bold 15px monospace";
           ctx.fillText(`KT  ${lma.kt.toFixed(3)}`, lmaX + 10, lmaTop + 163);
         }
       }
 
-      // 通知 CanvasRecorder 這一幀已畫完，可以合成錄影
       onFrameReadyRef.current?.(canvas);
-
       raf = requestAnimationFrame(render);
     };
 
-    render();
-    return () => cancelAnimationFrame(raf);
-  }, [mode]); // ✅ 只依賴 mode，不依賴 isLowEnd/showDebug（改用 Ref）
-  
- return (
-    <>
-      <canvas
-        ref={canvasRef}
-        id="fireworks-canvas"
-        style={{
-          position: "absolute",
-          top: 0,
-          left: 0,
-          width: "100%",
-          height: "100%",
-          pointerEvents: "none",
-          zIndex: 10, // 煙火粒子在中間層
-          mixBlendMode: "screen",
-          filter: "contrast(1.2) brightness(1.1)",
-        }}
-      />
-      {/* 原本在這裡的 {showDebug && <div ref={debugRef}...>} 已被刪除。
-          所有的 Debug 資訊現在都透過 ctx.fillText 直接畫在上面的 canvas 裡。
-          這樣 CanvasRecorder 錄製出來的 WebM 才會包含這些數據。
-      */}
-    </>
+    raf = requestAnimationFrame(render);
+    return () => { ro.disconnect(); cancelAnimationFrame(raf); };
+  }, [mode]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      id="fireworks-canvas"
+      style={{
+        position: "absolute", top: 0, left: 0,
+        width: "100%", height: "100%",
+        pointerEvents: "none", zIndex: 10,
+        mixBlendMode: "screen",
+        filter: "contrast(1.2) brightness(1.1)",
+      }}
+    />
   );
 }

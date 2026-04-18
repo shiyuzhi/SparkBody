@@ -33,10 +33,12 @@ export default function PoseSkeleton({
     isLowEndRef.current = isLowEnd;
     if (holisticRef.current) {
       holisticRef.current.setOptions({
-        modelComplexity: isLowEnd ? 0 : 1,
-        smoothLandmarks: !isLowEnd,
+        modelComplexity: 0,
+        smoothLandmarks: false,
         minDetectionConfidence: isLowEnd ? 0.4 : 0.5,
         minTrackingConfidence: isLowEnd ? 0.4 : 0.5,
+        enableFaceGeometry: false,
+        refineFaceLandmarks: false,
       });
     }
   }, [isLowEnd]);
@@ -77,9 +79,17 @@ export default function PoseSkeleton({
   useEffect(() => {
     let isMounted = true;
     const holistic = new Holistic({
-      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${file}?v=1`,
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/holistic@0.5.1675471629/${file}`,
     });
     holisticRef.current = holistic;
+    holistic.setOptions({
+      modelComplexity: 0,
+      smoothLandmarks: false,
+      minDetectionConfidence: isLowEndRef.current ? 0.4 : 0.5,
+      minTrackingConfidence: isLowEndRef.current ? 0.4 : 0.5,
+      enableFaceGeometry: false,
+      refineFaceLandmarks: false,
+    });
 
     const EXCLUDED_INDICES = [9, 10, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22];
     const PROFESSOR_HAND_CONNECTIONS = [
@@ -232,10 +242,10 @@ export default function PoseSkeleton({
       const leftG = detectGesture(results.leftHandLandmarks);
       const rightG = detectGesture(results.rightHandLandmarks);
 
-      if (onGestureData) onGestureData([[{ categoryName: leftG }], [{ categoryName: rightG }]]);
-      if (onPoseUpdate) {
+      if (onGestureDataRef.current) onGestureDataRef.current([[{ categoryName: leftG }], [{ categoryName: rightG }]]);
+      if (onPoseUpdateRef.current) {
         const flip = (lm) => lm ? { x: lm.x, y: lm.y, visibility: lm.visibility ?? 1 } : null;
-        onPoseUpdate({
+        onPoseUpdateRef.current({
           head: flip(results.poseLandmarks?.[0]),
           leftHand: flip(results.leftHandLandmarks?.[8] || results.poseLandmarks?.[15]),
           rightHand: flip(results.rightHandLandmarks?.[8] || results.poseLandmarks?.[16]),
@@ -256,9 +266,9 @@ export default function PoseSkeleton({
       onFrame: async () => {
         if (videoRef.current) await holistic.send({ image: videoRef.current });
       },
-      width: 640,
-      height: 360,
-      frameRate: 30, 
+      width: 480,
+      height: 270,
+      frameRate: 30,
     });
     camera.start();
 
@@ -267,7 +277,7 @@ export default function PoseSkeleton({
       camera.stop();
       holistic.close();
     };
-  }, [onPoseUpdate, onGestureData, hideCanvas]);
+  }, []);
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>

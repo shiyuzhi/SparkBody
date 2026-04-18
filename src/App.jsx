@@ -5,11 +5,10 @@ import DraggableSkeleton from "./DraggableSkeleton";
 import PoseSkeleton from "./PoseSkeleton";
 import Fireworks from "./Fireworks";
 import { drumKit } from "./Audio";
-import MouseFireworks from "./MouseFireworks";
+//import MouseFireworks from "./MouseFireworks";
 //  修正：加入 initLogger，確保 Logger 單例被正確初始化
 import { initLogger, flushImmediately, setUserId, setMode, generateNextUserId, resetSessionId } from "./AffectiveLogger";
 import { resetLMA } from "./lmaEngine";
-// import LMADemoPanel from "./LMADemoPanel";
 
 // Code Splitting - 延後加載重型組件
 const DraggableYouTube = lazy(() => import("./DraggableyouTube"));
@@ -28,11 +27,9 @@ const LoadingSpinner = () => (
 export default function App() {
   const [showSkeleton, setShowSkeleton] = useState(true);
   const [skeletonScale, setSkeletonScale] = useState(1);
-  const [poseData, setPoseData] = useState(null);
-  const [gestureData, setGestureData] = useState([]);
   const [showMusic, setShowMusic] = useState(false);
   const [videoId, setVideoId] = useState("4rgSzQwe5DQ");
-  const [inputUrl, setInputUrl] = useState("https://youtu.be/4rgSzQwe5DQ");
+  const inputUrl = "https://youtu.be/4rgSzQwe5DQ";
   const [midiList, setMidiList] = useState([]);
   const [categories, setCategories] = useState([]);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -51,7 +48,7 @@ export default function App() {
   const [isConfirmed, setIsConfirmed] = useState(false);
   const [sessionKey, setSessionKey] = useState(0);
   const [syncState, setSyncState] = useState({ status: "IDLE", pendingCount: 0, isOffline: false });
-  const [showDemo, setShowDemo] = useState(false);
+
   //  橫向遊玩提示
   const [showLandscapeHint, setShowLandscapeHint] = useState(true);
 
@@ -65,15 +62,6 @@ export default function App() {
 
   //  計算式 - 需要在 useEffect 之前定義
   const isLandscapePhone = windowHeight < 500;
-
-  // 當 poseData 改變時，只更新 Ref（不觸發 App 重新渲染）
-  useEffect(() => {
-    poseDataRef.current = poseData;
-  }, [poseData]);
-
-  useEffect(() => {
-    gestureDataRef.current = gestureData;
-  }, [gestureData]);
 
   //  橫向遊玩提示 - 只在手機顯示，5 秒後自動消失
   useEffect(() => {
@@ -146,8 +134,7 @@ export default function App() {
   const handleUrlChange = (e_or_url) => {
     const url = typeof e_or_url === "string" ? e_or_url : e_or_url.target.value;
     if (!url) return;
-    setInputUrl(url);
-    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
     const match = url.match(regExp);
     if (match && match[2].length === 11) {
       setVideoId(match[2]);
@@ -272,20 +259,18 @@ export default function App() {
         mode={`B-${sessionKey}`} onLMAUpdate={(lma) => { lmaDataRef.current = lma; }}
         /* onFrameReady={(canvas) => frameCallbackRef.current?.(canvas)} // 🚫 CanvasRecorder 已停用 */ />
 
-
       <DraggableSkeleton scale={skeletonScale} visible={showSkeleton} onHide={() => setShowSkeleton(false)}
         width={isLandscapePhone ? windowHeight * 0.8 : 600}
         height={isLandscapePhone ? windowHeight * 0.8 : 600}
         initialPosition={isLandscapePhone ? { top: "5%", left: "15%" } : { top: "10%", left: "25%" }} transparent>
-        <PoseSkeleton onPoseUpdate={setPoseData} onGestureData={setGestureData}
+        <PoseSkeleton onPoseUpdate={(d) => { poseDataRef.current = d; }} onGestureData={(d) => { gestureDataRef.current = d; }}
           hideCanvas={!showSkeleton} isLowEnd={isLowEnd}
           skeletonCanvasRef={skeletonCanvasRef} lmaDataRef={lmaDataRef} showDebug={showDebug} />
       </DraggableSkeleton>
 
       {/*  鼠標 Fireworks - 低端模式不顯示 */}
-      {!isLowEnd && <MouseFireworks isLowEnd={isLowEnd} />}
-      {/*showDebug && <LMADemoPanel lmaDataRef={lmaDataRef} />}
-      {showDemo && <LMADemoPanel />}
+      {/*!isLowEnd && <MouseFireworks isLowEnd={isLowEnd} />*/}
+
       {/* ── CSS ── */}
       <style>{`
         @keyframes spin {
@@ -372,10 +357,6 @@ export default function App() {
         @keyframes fb-pulse {
           0%,100% { transform: scale(1); opacity: 0.7; }
           50%      { transform: scale(1.08); opacity: 1; }
-        }
-        
-          0%,100% { box-shadow:0 0 0 0 rgba(100,220,255,0); }
-          50%      { box-shadow:0 0 0 4px rgba(100,220,255,0.1); }
         }
 
         .yt-input {
@@ -505,14 +486,12 @@ export default function App() {
               fontSize: "0.65rem", cursor: "pointer", fontFamily: "monospace", whiteSpace: "nowrap" }}>
             {isConfirmed ? `👤 ${currentUserId}` : "Set Participant"}
           </button>
-          
           {isConfirmed && (
             <button onClick={resetSession} className="btn btn-sm btn-outline-warning"
               style={{ fontSize: "0.6rem", padding: "2px 5px" }}>
               NEXT ▶
             </button>
           )}
-        
           <div onClick={() => setShowDebug(v => !v)}
             style={{ background: showDebug ? "rgba(0,239,255,0.15)" : "rgba(255,255,255,0.05)",
               border: `1px solid ${showDebug ? "#0ef" : "#444"}`, borderRadius: 6,
@@ -520,16 +499,7 @@ export default function App() {
               fontSize: "0.65rem", cursor: "pointer", fontFamily: "monospace" }}>
             {showDebug ? "LMA ✓" : "LMA"}
           </div>
-          {/*<div onClick={() => setShowDemo(v => !v)}
-            style={{
-              background: showDemo ? "rgba(0,239,255,0.15)" : "rgba(255,255,255,0.05)",
-              border: `1px solid ${showDemo ? "#0ef" : "#444"}`, borderRadius: 6,
-              padding: "3px 7px", color: showDemo ? "#0ef" : "#555",
-              fontSize: "0.65rem", cursor: "pointer", fontFamily: "monospace"
-            }}>
-            {showDemo ? "DEMO ✓" : "DEMO"}
-          </div>
-          */}
+
           <div className="tb-sep" />
 
           {/* 🚫 錄影功能已停用
@@ -569,7 +539,9 @@ export default function App() {
             className="feedback-btn" title="Submit Feedback">📮</a>
 
           {/* YT URL 輸入框 */}
-          <input type="text" value={inputUrl} onChange={handleUrlChange}
+          <input type="text" defaultValue={inputUrl}
+            onBlur={handleUrlChange}
+            onKeyDown={(e) => { if (e.key === "Enter") handleUrlChange(e); }}
             className="yt-input d-none d-md-block"
             placeholder="貼上 YouTube 連結" />
 
