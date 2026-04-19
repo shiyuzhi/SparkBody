@@ -1,20 +1,15 @@
 // App.jsx
-import React, { useState, useEffect, useRef, Suspense, lazy } from "react";
+import React, { useState, useEffect, useRef, Suspense, lazy, startTransition, useDeferredValue } from "react";
 import "bootstrap/dist/css/bootstrap.min.css";
 import DraggableSkeleton from "./DraggableSkeleton";
 import PoseSkeleton from "./PoseSkeleton";
 import Fireworks from "./Fireworks";
 import { drumKit } from "./Audio";
-//import MouseFireworks from "./MouseFireworks";
-//  修正：加入 initLogger，確保 Logger 單例被正確初始化
 import { initLogger, flushImmediately, setUserId, setMode, generateNextUserId, resetSessionId } from "./AffectiveLogger";
 import { resetLMA } from "./lmaEngine";
 
-// Code Splitting - 延後加載重型組件
 const DraggableYouTube = lazy(() => import("./DraggableyouTube"));
-// const CanvasRecorder = lazy(() => import("./Canvasrecorder")); // 🚫 錄影功能已停用
 
-// Suspense Fallback 組件
 const LoadingSpinner = () => (
   <div style={{
     width: "24px", height: "24px", borderRadius: "50%",
@@ -48,44 +43,42 @@ export default function App() {
   const [isConfirmed, setIsConfirmed] = useState(false);
   const [sessionKey, setSessionKey] = useState(0);
   const [syncState, setSyncState] = useState({ status: "IDLE", pendingCount: 0, isOffline: false });
-
-  //  橫向遊玩提示
   const [showLandscapeHint, setShowLandscapeHint] = useState(true);
+  // ✅ LCP：延後初始化 MediaPipe，讓首幀先繪製
+  const [poseReady, setPoseReady] = useState(false);
+
+  // ✅ INP：useDeferredValue 讓 YouTube 更新不阻塞 keyboard 回應
+  const deferredVideoId = useDeferredValue(videoId);
 
   const skeletonCanvasRef = useRef(null);
   const lmaDataRef = useRef(null);
-  // const frameCallbackRef = useRef(null); // 🚫 CanvasRecorder 已停用
-
-  //  策略 C：分離偵測邏輯 - 使用 Ref 減少重新渲染
   const poseDataRef = useRef(null);
   const gestureDataRef = useRef(null);
 
-  //  計算式 - 需要在 useEffect 之前定義
   const isLandscapePhone = windowHeight < 500;
 
-  //  橫向遊玩提示 - 只在手機顯示，5 秒後自動消失
   useEffect(() => {
     const isMobileDevice = windowWidth < 600;
     if (showLandscapeHint && isMobileDevice) {
-      const timer = setTimeout(() => {
-        setShowLandscapeHint(false);
-      }, 5000);
+      const timer = setTimeout(() => setShowLandscapeHint(false), 5000);
       return () => clearTimeout(timer);
     }
   }, [showLandscapeHint, windowWidth]);
 
-  //  修正：confirmUser 加入 initLogger(id)，確保 Logger 單例存在
   const confirmUser = () => {
     const id = generateNextUserId();
     setCurrentUserId(id);
-    initLogger(id);   // ← 關鍵：初始化 Logger 單例，之後 logActivity() 才能正常運作
+    initLogger(id);
     resetSessionId();
-    resetLMA();       // ← 每個新受試者重置 LMA baseline
+    resetLMA();
     setUserId(id);
     setMode("B");
     setIsConfirmed(true);
     console.log(`[Session] userId=${id} mode=B`);
   };
+
+  // ✅ LCP：boot-screen 移除
+  useEffect(() => { window.__removeBoot?.(); }, []);
 
   useEffect(() => {
     const handleUnlockAudio = () => { drumKit.init(); window.removeEventListener("click", handleUnlockAudio); };
@@ -95,7 +88,6 @@ export default function App() {
     const onLoggerStatus = (e) => setSyncState(e.detail);
     window.addEventListener("LMA_LOGGER_STATUS", onLoggerStatus);
 
-    // ✅ 策略 D：延後加載 API 數據 - 非阻塞式加載
     const loadApiData = () => {
       fetch("https://imuse.ncnu.edu.tw/Midi-library/api/categories")
         .then(res => res.json())
@@ -117,47 +109,57 @@ export default function App() {
         .catch(err => console.error("MIDI Error:", err));
     };
 
-    // 使用 requestIdleCallback 延後加載（主線程閒置時執行）
+    // ✅ 方案 B：idle 時同時預載 DraggableYouTube chunk + API 資料
     if (window.requestIdleCallback) {
-      window.requestIdleCallback(loadApiData, { timeout: 2000 });
+      window.requestIdleCallback(() => {
+        import("./DraggableyouTube");
+        loadApiData();
+      }, { timeout: 2000 });
     } else {
-      setTimeout(loadApiData, 500);
+      setTimeout(() => {
+        import("./DraggableyouTube");
+        loadApiData();
+      }, 500);
     }
 
+    // ✅ LCP：首幀渲染完成後才啟動 MediaPipe（避免 WASM 下載阻塞主線程）
+    const t = setTimeout(() => setPoseReady(true), 800);
+
     return () => {
+      clearTimeout(t);
       window.removeEventListener("resize", handleResize);
       window.removeEventListener("click", handleUnlockAudio);
       window.removeEventListener("LMA_LOGGER_STATUS", onLoggerStatus);
     };
   }, []);
 
+  // ✅ INP 優化：startTransition 標記非緊急更新，drumKit.init() 保留在外
   const handleUrlChange = (e_or_url) => {
     const url = typeof e_or_url === "string" ? e_or_url : e_or_url.target.value;
     if (!url) return;
-    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
-    const match = url.match(regExp);
+    const match = url.match(/^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/);
     if (match && match[2].length === 11) {
-      setVideoId(match[2]);
-      setShowMusic(true);
-      drumKit.init();
+      drumKit.init(); // AudioContext 需即時，保留在 transition 外
+      startTransition(() => {
+        setVideoId(match[2]);
+        setShowMusic(true);
+      });
     }
   };
 
-  //  修正：resetSession 同樣加入 initLogger(id)
   const resetSession = () => {
     flushImmediately().catch(e => console.error("Flush failed:", e));
     const id = generateNextUserId();
     setCurrentUserId(id);
-    initLogger(id);   // ← 關鍵：新受試者重新初始化 Logger（initLogger 內部會複用單例並更新 userId）
+    initLogger(id);
     resetSessionId();
-    resetLMA();       // ← 每個新受試者重置 LMA baseline
+    resetLMA();
     setUserId(id);
     setMode("B");
     setIsConfirmed(true);
     setSessionKey(k => k + 1);
   };
 
-  // [新增] 定義學術中性顯示名稱對照表，避開潛在審稿偏見
   const displayNames = {
     "台語歌曲": "Hokkien (Southern Min)",
     "華語歌曲": "Mandarin (Sinitic)",
@@ -172,7 +174,7 @@ export default function App() {
     <div className="music-panel">
       {categories.map((cat) => {
         const songs = midiList.filter((m) => {
-          const isSensitive = m.title.includes("中華民國") || m.title.includes("民國")|| m.title.includes("軍紀歌")|| m.title.includes("夜襲");
+          const isSensitive = m.title.includes("中華民國") || m.title.includes("民國") || m.title.includes("軍紀歌") || m.title.includes("夜襲");
           const isMatch = (Array.isArray(m.categories) && m.categories.includes(cat)) || m.categories_text === cat;
           return !isSensitive && isMatch;
         });
@@ -233,7 +235,6 @@ export default function App() {
   return (
     <main style={{ height: "100dvh", width: "100vw", backgroundColor: "black", overflow: "hidden", position: "relative" }}>
 
-      {/* ✅ 橫向遊玩提示 - 只在手機顯示，點按關閉或 5 秒後自動消失 */}
       {showLandscapeHint && windowWidth < 600 && (
         <div
           onClick={() => setShowLandscapeHint(false)}
@@ -253,39 +254,31 @@ export default function App() {
         </div>
       )}
 
-      {/*  Fireworks - 核心組件，不延後加載 */}
-      {/*  INP 優化：傳遞 Ref 而不是 Props，避免組件重新渲染 */}
       <Fireworks poseDataRef={poseDataRef} gestureDataRef={gestureDataRef} isLowEnd={isLowEnd} showDebug={showDebug}
-        mode={`B-${sessionKey}`} onLMAUpdate={(lma) => { lmaDataRef.current = lma; }}
-        /* onFrameReady={(canvas) => frameCallbackRef.current?.(canvas)} // 🚫 CanvasRecorder 已停用 */ />
+        mode={`B-${sessionKey}`} onLMAUpdate={(lma) => { lmaDataRef.current = lma; }} />
 
       <DraggableSkeleton scale={skeletonScale} visible={showSkeleton} onHide={() => setShowSkeleton(false)}
         width={isLandscapePhone ? windowHeight * 0.8 : 600}
         height={isLandscapePhone ? windowHeight * 0.8 : 600}
         initialPosition={isLandscapePhone ? { top: "5%", left: "15%" } : { top: "10%", left: "25%" }} transparent>
-        <PoseSkeleton onPoseUpdate={(d) => { poseDataRef.current = d; }} onGestureData={(d) => { gestureDataRef.current = d; }}
-          hideCanvas={!showSkeleton} isLowEnd={isLowEnd}
-          skeletonCanvasRef={skeletonCanvasRef} lmaDataRef={lmaDataRef} showDebug={showDebug} />
+        {poseReady && (
+          <PoseSkeleton onPoseUpdate={(d) => { poseDataRef.current = d; }} onGestureData={(d) => { gestureDataRef.current = d; }}
+            hideCanvas={!showSkeleton} isLowEnd={isLowEnd}
+            skeletonCanvasRef={skeletonCanvasRef} lmaDataRef={lmaDataRef} showDebug={showDebug} />
+        )}
       </DraggableSkeleton>
 
-      {/*  鼠標 Fireworks - 低端模式不顯示 */}
-      {/*!isLowEnd && <MouseFireworks isLowEnd={isLowEnd} />*/}
-
-      {/* ── CSS ── */}
       <style>{`
         @keyframes spin {
           from { transform: rotate(0deg); }
           to { transform: rotate(360deg); }
         }
-
         @keyframes fadeInOut {
           0% { opacity: 1; }
           80% { opacity: 1; }
           100% { opacity: 0; }
         }
-
         .tb-sep { width:1px; height:24px; background:rgba(255,255,255,0.13); flex-shrink:0; }
-
         .music-trigger {
           display:flex; align-items:center; gap:6px;
           padding:5px 12px; border-radius:6px; cursor:pointer;
@@ -298,11 +291,8 @@ export default function App() {
           background:rgba(255,255,255,0.12); border-color:rgba(255,255,255,0.5);
           box-shadow:0 0 8px rgba(255,255,255,0.1);
         }
-        .music-trigger .arr {
-          font-size:0.5rem; opacity:0.55; display:inline-block; transition:transform 0.2s;
-        }
+        .music-trigger .arr { font-size:0.5rem; opacity:0.55; display:inline-block; transition:transform 0.2s; }
         .music-trigger.open .arr { transform:rotate(180deg); }
-
         .music-panel {
           position:absolute; bottom:calc(100% + 8px); right:0;
           width:240px; max-height:52vh; background:#0d0d0d;
@@ -313,7 +303,6 @@ export default function App() {
         }
         .music-panel::-webkit-scrollbar { width:3px; }
         .music-panel::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.18); border-radius:2px; }
-
         .cat-row {
           display:flex; align-items:center; justify-content:space-between;
           padding:10px 14px; cursor:pointer; color:#ffc107;
@@ -324,7 +313,6 @@ export default function App() {
         .cat-row.active { background:rgba(255,180,0,0.12); color:#ffd54f; }
         .cat-arrow { font-size:0.5rem; opacity:0.45; display:inline-block; transition:transform 0.18s, opacity 0.18s; }
         .cat-row.active .cat-arrow { transform:rotate(90deg); opacity:1; }
-
         .song-list { border-left:2px solid rgba(255,180,0,0.22); }
         .song-row {
           padding:8px 12px 8px 16px; cursor:pointer;
@@ -334,7 +322,6 @@ export default function App() {
           white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
         }
         .song-row:hover { background:rgba(0,220,255,0.07); color:#00e5ff; padding-left:20px; }
-
         .show-btn {
           display:flex; align-items:center; justify-content:center;
           padding:5px 12px; border-radius:6px; cursor:pointer;
@@ -346,7 +333,6 @@ export default function App() {
           background:rgba(255,180,0,0.12); border-color:rgba(255,180,0,0.5);
           color:#ffc107; box-shadow:0 0 6px rgba(255,180,0,0.18);
         }
-
         .feedback-btn {
           display:flex; align-items:center; justify-content:center;
           width:32px; height:32px; border-radius:50%; cursor:pointer; flex-shrink:0;
@@ -358,7 +344,6 @@ export default function App() {
           0%,100% { transform: scale(1); opacity: 0.7; }
           50%      { transform: scale(1.08); opacity: 1; }
         }
-
         .yt-input {
           width:110px; font-size:0.72rem; padding:5px 8px;
           background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.14);
@@ -367,105 +352,98 @@ export default function App() {
         .yt-input::placeholder { color:rgba(0,220,255,0.4); }
       `}</style>
 
-      {/* ── 動作指引卡片 ── */}
       {showGuide && (
         <div style={{
           position: "absolute",
           bottom: isLandscapePhone ? "50px" : "65px",
-          left: "50%",
-          transform: "translateX(-50%)",
-          zIndex: 199,
-          pointerEvents: "none",
+          left: "50%", transform: "translateX(-50%)",
+          zIndex: 199, pointerEvents: "none",
         }}>
           <svg width="1440" height="444" viewBox="0 0 680 210" xmlns="http://www.w3.org/2000/svg">
-              <style>{`
-                .gs { stroke: #FF6B2B; stroke-width: 3; stroke-linecap: round; fill: none; }
-                .gh { stroke: #FF6B2B; stroke-width: 3; fill: none; }
-                .gl { font-family: sans-serif; font-size: 13px; fill: #FF6B2B; text-anchor: middle; font-weight: bold; }
-                .gs2{ font-family: sans-serif; font-size: 14px; fill: #ccc; text-anchor: middle; }
-                .gc { fill: rgba(255,107,43,0.06); stroke: rgba(255,107,43,0.25); stroke-width: 1; }
-              `}</style>
-              <rect x="20"  y="10" width="140" height="185" rx="8" className="gc"/>
-              <rect x="180" y="10" width="140" height="185" rx="8" className="gc"/>
-              <rect x="340" y="10" width="140" height="185" rx="8" className="gc"/>
-              <rect x="500" y="10" width="160" height="185" rx="8" className="gc"/>
-              <g transform="translate(90,55)">
-                <circle cx="0" cy="0" r="12" className="gh"/>
-                <line x1="0" y1="12" x2="0" y2="55" className="gs"/>
-                <line x1="0" y1="25" x2="-28" y2="10" className="gs"/>
-                <line x1="-28" y1="10" x2="-28" y2="-5" className="gs"/>
-                <line x1="-28" y1="-5" x2="-22" y2="-18" className="gs"/>
-                <line x1="-28" y1="-5" x2="-34" y2="-18" className="gs"/>
-                <line x1="0" y1="25" x2="20" y2="18" className="gs"/>
-                <line x1="0" y1="55" x2="-15" y2="85" className="gs"/>
-                <line x1="0" y1="55" x2="15" y2="85" className="gs"/>
-              </g>
-              <text x="90" y="162" className="gl">V</text>
-              <text x="90" y="182" className="gs2">✌️</text>
-              <g transform="translate(250,55)">
-                <circle cx="0" cy="0" r="12" className="gh"/>
-                <line x1="0" y1="12" x2="0" y2="55" className="gs"/>
-                <line x1="0" y1="25" x2="-28" y2="10" className="gs"/>
-                <line x1="-28" y1="10" x2="-28" y2="-2" className="gs"/>
-                <line x1="0" y1="25" x2="28" y2="10" className="gs"/>
-                <line x1="28" y1="10" x2="20" y2="-4" className="gs"/>
-                <line x1="28" y1="10" x2="28" y2="-4" className="gs"/>
-                <line x1="28" y1="10" x2="34" y2="-2" className="gs"/>
-                <line x1="28" y1="10" x2="38" y2="4" className="gs"/>
-                <line x1="28" y1="10" x2="40" y2="12" className="gs"/>
-                <line x1="0" y1="55" x2="-15" y2="85" className="gs"/>
-                <line x1="0" y1="55" x2="15" y2="85" className="gs"/>
-              </g>
-              <text x="250" y="162" className="gl">Fist to Open</text>
-              <text x="250" y="182" className="gs2">✊→🖐️</text>
-              <g transform="translate(410,60)">
-                <path d="M0,-35 C0,-45 -12,-45 -12,-35 C-12,-25 0,-18 0,-18 C0,-18 12,-25 12,-35 C12,-45 0,-45 0,-35 Z" fill="#ff4d4d"/>
-                <circle cx="0" cy="0" r="12" className="gh"/>
-                <line x1="0" y1="12" x2="0" y2="55" className="gs"/>
-                <line x1="0" y1="22" x2="-22" y2="5" className="gs"/>
-                <line x1="-22" y1="5" x2="-10" y2="-18" className="gs"/>
-                <line x1="0" y1="22" x2="22" y2="5" className="gs"/>
-                <line x1="22" y1="5" x2="10" y2="-18" className="gs"/>
-                <line x1="0" y1="55" x2="-15" y2="85" className="gs"/>
-                <line x1="0" y1="55" x2="15" y2="85" className="gs"/>
-              </g>
-              <text x="410" y="162" className="gl">Hands Touching</text>
-              <text x="410" y="182" className="gs2">🤲❤️</text>
-              <g transform="translate(580,60)">
-                <circle cx="0" cy="0" r="12" className="gh"/>
-                <line x1="0" y1="12" x2="0" y2="55" className="gs"/>
-                <line x1="0" y1="22" x2="-48" y2="8" className="gs"/>
-                <line x1="0" y1="22" x2="48" y2="8" className="gs"/>
-                <line x1="-48" y1="8" x2="-58" y2="22" className="gs"/>
-                <line x1="48" y1="8" x2="58" y2="22" className="gs"/>
-                <line x1="0" y1="55" x2="-15" y2="85" className="gs"/>
-                <line x1="0" y1="55" x2="15" y2="85" className="gs"/>
-              </g>
-              <text x="580" y="162" className="gl">Raise & Lower Hands</text>
-              <text x="580" y="182" className="gs2">🦅👇</text>
-            </svg>
+            <style>{`
+              .gs { stroke: #FF6B2B; stroke-width: 3; stroke-linecap: round; fill: none; }
+              .gh { stroke: #FF6B2B; stroke-width: 3; fill: none; }
+              .gl { font-family: sans-serif; font-size: 13px; fill: #FF6B2B; text-anchor: middle; font-weight: bold; }
+              .gs2{ font-family: sans-serif; font-size: 14px; fill: #ccc; text-anchor: middle; }
+              .gc { fill: rgba(255,107,43,0.06); stroke: rgba(255,107,43,0.25); stroke-width: 1; }
+            `}</style>
+            <rect x="20"  y="10" width="140" height="185" rx="8" className="gc"/>
+            <rect x="180" y="10" width="140" height="185" rx="8" className="gc"/>
+            <rect x="340" y="10" width="140" height="185" rx="8" className="gc"/>
+            <rect x="500" y="10" width="160" height="185" rx="8" className="gc"/>
+            <g transform="translate(90,55)">
+              <circle cx="0" cy="0" r="12" className="gh"/>
+              <line x1="0" y1="12" x2="0" y2="55" className="gs"/>
+              <line x1="0" y1="25" x2="-28" y2="10" className="gs"/>
+              <line x1="-28" y1="10" x2="-28" y2="-5" className="gs"/>
+              <line x1="-28" y1="-5" x2="-22" y2="-18" className="gs"/>
+              <line x1="-28" y1="-5" x2="-34" y2="-18" className="gs"/>
+              <line x1="0" y1="25" x2="20" y2="18" className="gs"/>
+              <line x1="0" y1="55" x2="-15" y2="85" className="gs"/>
+              <line x1="0" y1="55" x2="15" y2="85" className="gs"/>
+            </g>
+            <text x="90" y="162" className="gl">V</text>
+            <text x="90" y="182" className="gs2">✌️</text>
+            <g transform="translate(250,55)">
+              <circle cx="0" cy="0" r="12" className="gh"/>
+              <line x1="0" y1="12" x2="0" y2="55" className="gs"/>
+              <line x1="0" y1="25" x2="-28" y2="10" className="gs"/>
+              <line x1="-28" y1="10" x2="-28" y2="-2" className="gs"/>
+              <line x1="0" y1="25" x2="28" y2="10" className="gs"/>
+              <line x1="28" y1="10" x2="20" y2="-4" className="gs"/>
+              <line x1="28" y1="10" x2="28" y2="-4" className="gs"/>
+              <line x1="28" y1="10" x2="34" y2="-2" className="gs"/>
+              <line x1="28" y1="10" x2="38" y2="4" className="gs"/>
+              <line x1="28" y1="10" x2="40" y2="12" className="gs"/>
+              <line x1="0" y1="55" x2="-15" y2="85" className="gs"/>
+              <line x1="0" y1="55" x2="15" y2="85" className="gs"/>
+            </g>
+            <text x="250" y="162" className="gl">Fist to Open</text>
+            <text x="250" y="182" className="gs2">✊→🖐️</text>
+            <g transform="translate(410,60)">
+              <path d="M0,-35 C0,-45 -12,-45 -12,-35 C-12,-25 0,-18 0,-18 C0,-18 12,-25 12,-35 C12,-45 0,-45 0,-35 Z" fill="#ff4d4d"/>
+              <circle cx="0" cy="0" r="12" className="gh"/>
+              <line x1="0" y1="12" x2="0" y2="55" className="gs"/>
+              <line x1="0" y1="22" x2="-22" y2="5" className="gs"/>
+              <line x1="-22" y1="5" x2="-10" y2="-18" className="gs"/>
+              <line x1="0" y1="22" x2="22" y2="5" className="gs"/>
+              <line x1="22" y1="5" x2="10" y2="-18" className="gs"/>
+              <line x1="0" y1="55" x2="-15" y2="85" className="gs"/>
+              <line x1="0" y1="55" x2="15" y2="85" className="gs"/>
+            </g>
+            <text x="410" y="162" className="gl">Hands Touching</text>
+            <text x="410" y="182" className="gs2">🤲❤️</text>
+            <g transform="translate(580,60)">
+              <circle cx="0" cy="0" r="12" className="gh"/>
+              <line x1="0" y1="12" x2="0" y2="55" className="gs"/>
+              <line x1="0" y1="22" x2="-48" y2="8" className="gs"/>
+              <line x1="0" y1="22" x2="48" y2="8" className="gs"/>
+              <line x1="-48" y1="8" x2="-58" y2="22" className="gs"/>
+              <line x1="48" y1="8" x2="58" y2="22" className="gs"/>
+              <line x1="0" y1="55" x2="-15" y2="85" className="gs"/>
+              <line x1="0" y1="55" x2="15" y2="85" className="gs"/>
+            </g>
+            <text x="580" y="162" className="gl">Raise & Lower Hands</text>
+            <text x="580" y="182" className="gs2">🦅👇</text>
+          </svg>
         </div>
       )}
 
-      {/* ── 底部工具列 ── */}
       <div className="w-100 d-flex align-items-center px-3 px-md-4"
         style={{ background: "rgba(15,15,15,0.95)", borderTop: "1px solid #333", zIndex: 200,
           position: "absolute", bottom: 0,
           height: isLandscapePhone ? "50px" : "65px",
           paddingBottom: "env(safe-area-inset-bottom)" }}>
 
-        {/* 左側 */}
         <div className="d-flex align-items-center gap-2" style={{ flexShrink: 0 }}>
-
-          {/* 群組1：骨架 */}
           <button className="btn btn-sm btn-info"
             style={{ fontSize: "0.7rem", padding: "3px 8px" }}
             onClick={() => { setShowSkeleton(!showSkeleton); drumKit.init(); }}>
             💀
           </button>
           {!isLandscapePhone && (
-            <input type="range" min="0.3" max="2" step="0.1" value={skeletonScale}
-              onChange={(e) => setSkeletonScale(parseFloat(e.target.value))}
+            <input type="range" min="0.3" max="2" step="0.1" defaultValue={skeletonScale}
+              onPointerUp={(e) => setSkeletonScale(parseFloat(e.target.value))}
               aria-label="Skeleton scale"
               style={{ width: "50px" }} />
           )}
@@ -478,7 +456,6 @@ export default function App() {
 
           <div className="tb-sep" />
 
-          {/* 群組2：實驗管理 */}
           <button onClick={confirmUser}
             style={{ background: isConfirmed ? "rgba(0,239,255,0.15)" : "rgba(255,100,100,0.2)",
               border: `1px solid ${isConfirmed ? "#0ef" : "#f66"}`, borderRadius: 6,
@@ -501,25 +478,11 @@ export default function App() {
           </div>
 
           <div className="tb-sep" />
-
-          {/* 🚫 錄影功能已停用
-          {!isLowEnd && (
-            <Suspense fallback={<LoadingSpinner />}>
-              <CanvasRecorder
-                skeletonCanvasRef={skeletonCanvasRef}
-                userId={currentUserId}
-                onRegisterFrameCallback={(cb) => { frameCallbackRef.current = cb; }}
-              />
-            </Suspense>
-          )}
-          */}
         </div>
 
-        {/* 右側：點歌區 */}
         <div className="ms-auto d-flex align-items-center gap-2"
           style={{ zIndex: 1000, position: "relative", flexShrink: 0 }}>
 
-          {/* 動作指引按鈕 */}
           <button
             onClick={() => setShowGuide(v => !v)}
             style={{
@@ -534,18 +497,20 @@ export default function App() {
             Action Guide
           </button>
 
-          {/* 回饋按鈕 */}
           <a href="https://forms.gle/fmD9XYixYHLLrjQP6" target="_blank" rel="noopener noreferrer"
             className="feedback-btn" title="Submit Feedback">📮</a>
 
-          {/* YT URL 輸入框 */}
+          {/* ✅ INP 優化：移除 onBlur，只保留 Enter 鍵觸發；加 preventDefault + stopPropagation */}
           <input type="text" defaultValue={inputUrl}
-            onBlur={handleUrlChange}
-            onKeyDown={(e) => { if (e.key === "Enter") handleUrlChange(e); }}
+            onKeyDown={(e) => {
+              if (e.key !== "Enter") return;
+              e.preventDefault();
+              e.stopPropagation();
+              handleUrlChange(e);
+            }}
             className="yt-input d-none d-md-block"
             placeholder="貼上 YouTube 連結" />
 
-          {/* 點歌觸發器 */}
           <div className={`music-trigger${isMenuOpen ? " open" : ""}`}
             onClick={() => { setIsMenuOpen(v => !v); setExpandedCat(null); }}>
             <span>♩</span>
@@ -553,20 +518,15 @@ export default function App() {
             <span className="arr">▼</span>
           </div>
 
-          {/* 下拉面板 */}
           {isMenuOpen && renderMusicPanel()}
-          
 
-          {/* 播放器開關 */}
           <div className={`show-btn${showMusic ? " on" : ""}`}
             onClick={() => { setShowMusic(v => !v); drumKit.init(); }}>
             🎵 Music
           </div>
-
         </div>
       </div>
 
-      {/* ✅ 策略 B：LCP 標題 */}
       {windowWidth >= 950 && (
         <div className="text-center"
           style={{
@@ -581,10 +541,9 @@ export default function App() {
         </div>
       )}
 
-      {/* 策略 A：Code Splitting - 延後加載 YouTube */}
       {showMusic && (
         <Suspense fallback={<LoadingSpinner />}>
-          <DraggableYouTube videoId={videoId}
+          <DraggableYouTube videoId={deferredVideoId}
             width={isLandscapePhone ? 240 : 320}
             height={isLandscapePhone ? 135 : 180}
             initialPosition={{ top: 20, left: windowWidth - (isLandscapePhone ? 260 : 340) }} />

@@ -13,7 +13,8 @@ class Particle {
 
     if (type === "heart")          this.decay = 0.06;
     else if (type === "explosion") this.decay = 0.09;
-    else                           this.decay = 0.04;
+    else if (type === "ray")       this.decay = 0.04;
+    else                           this.decay = 0.12;
 
     if (type === "explosion") {
       const angle = Math.random() * Math.PI * 2;
@@ -144,6 +145,9 @@ export default function Fireworks({ poseDataRef, gestureDataRef, isLowEnd, showD
   const birdStatus   = useRef({ lastTriggerTime: 0, prevLY: null, prevRY: null, prevLVY: null, prevRVY: null, prevTime: null, phase: "IDLE", upFrames: 0, risingStartTime: null, wingsMissFrames: 0 });
   const birdTemplate = useRef(createBirdTemplate());
 
+  // ✅ 膝蓋位移 debounce 用
+  const prevKneeRef = useRef({ lky: null, rky: null });
+
   useEffect(() => {
     const baseUrl   = import.meta.env.BASE_URL;
     const soundPath = `${baseUrl}/sounds/FWSnare.mp3`.replace(/\/+/g, "/");
@@ -237,11 +241,14 @@ export default function Fireworks({ poseDataRef, gestureDataRef, isLowEnd, showD
       if (w === 0 || h === 0) { raf = requestAnimationFrame(render); return; }
       const scale = Math.min(w, h) / 900;
 
+      // ── Frame init：Deterministic RAF loop 責任範圍，無條件執行 ──
+      // ✅ fix: 移至 pose early-return 之前，確保煙火殘影每幀都淡出
       ctx.globalCompositeOperation = "source-over";
       ctx.globalAlpha = 1;
-      ctx.fillStyle = isLowEndRef.current ? "rgba(0,0,0,0.35)" : "rgba(0,0,0,0.15)";
+      ctx.fillStyle = isLowEndRef.current ? "rgba(0,0,0,0.5)" : "rgba(0,0,0,0.35)";
       ctx.fillRect(0, 0, w, h);
 
+      // ── Atomic ref buffer read（poseDataRef = SWMR no queue）──────────
       const currentPose = poseDataRef.current;
       const hasLeftHand  = currentPose?.leftHand  && currentPose.leftHand.visibility  > 0.5;
       const hasRightHand = currentPose?.rightHand && currentPose.rightHand.visibility > 0.5;
@@ -264,7 +271,7 @@ export default function Fireworks({ poseDataRef, gestureDataRef, isLowEnd, showD
         rs_y: typeof rightShoulder?.y === "number" ? rightShoulder.y : null,
       };
 
-      // ── LMA ─────────────────────────────────────────────────────────────
+      // ── LMA（internal LMA computation）───────────────────────────────
       const lma = extractLMA(currentPose);
       if (lma) {
         lmaRef.current = lma;
@@ -427,11 +434,14 @@ export default function Fireworks({ poseDataRef, gestureDataRef, isLowEnd, showD
         }
       }
 
-      // ── 膝蓋粒子（✅ forEach → if block）────────────────────────────────
-      if (leftKnee?.visibility > 0.3)
+      // ── 膝蓋粒子：✅ visibility 0.3→0.6，加位移 threshold 防每幀噴射 ──
+      const prevKnee = prevKneeRef.current;
+      if (leftKnee?.visibility > 0.6 && Math.abs((leftKnee.y - (prevKnee.lky ?? leftKnee.y))) > 0.015)
         particles.current.push(new Particle((1 - leftKnee.x) * w, leftKnee.y * h, "#00FF00", "normal", isLowEndRef.current));
-      if (rightKnee?.visibility > 0.3)
+      prevKnee.lky = leftKnee?.y ?? prevKnee.lky;
+      if (rightKnee?.visibility > 0.6 && Math.abs((rightKnee.y - (prevKnee.rky ?? rightKnee.y))) > 0.015)
         particles.current.push(new Particle((1 - rightKnee.x) * w, rightKnee.y * h, "#FF8C00", "normal", isLowEndRef.current));
+      prevKnee.rky = rightKnee?.y ?? prevKnee.rky;
 
       // 粒子上限
       const maxP = isLowEndRef.current ? 150 : 1000;

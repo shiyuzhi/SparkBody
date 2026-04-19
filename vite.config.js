@@ -3,7 +3,6 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
-  // 窮途末路了
   base: "/SparkBody/",
   optimizeDeps: {
     include: [
@@ -11,6 +10,16 @@ export default defineConfig({
       "@mediapipe/camera_utils",
       "@mediapipe/drawing_utils",
     ],
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes("DraggableyouTube")) return "yt-player";
+          if (id.includes("bootstrap"))        return "bootstrap";
+        }
+      }
+    }
   },
   server: {
     hmr: { overlay: false },
