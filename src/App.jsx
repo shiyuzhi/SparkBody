@@ -7,6 +7,9 @@ import Fireworks from "./Fireworks";
 import { drumKit } from "./Audio";
 import { initLogger, flushImmediately, setUserId, setMode, generateNextUserId, resetSessionId } from "./AffectiveLogger";
 import { resetLMA } from "./lmaEngine";
+import { useRTC } from "./useRTC";
+import RemoteSkeleton from "./RemoteSkeleton";
+import RTCPanel from "./RTCPanel";
 
 const DraggableYouTube = lazy(() => import("./DraggableyouTube"));
 
@@ -46,6 +49,28 @@ export default function App() {
   const [showLandscapeHint, setShowLandscapeHint] = useState(true);
   // ✅ LCP：延後初始化 MediaPipe，讓首幀先繪製
   const [poseReady, setPoseReady] = useState(false);
+
+  // ── RTC state ─────────────────────────────────────────────────────────────
+  const [rtcRoom, setRtcRoom] = useState(null);
+  const [rtcRole, setRtcRole] = useState(null);
+  const [remotePose, setRemotePose] = useState(null);
+  const ytPlayerRef = useRef(null);
+
+  const { status: rtcStatus, sendPose, sendYtSync } = useRTC({
+    roomId: rtcRoom,
+    role: rtcRole,
+    onPoseData: setRemotePose,
+    onYtSync: ({ action, videoTime }) => {
+      const player = ytPlayerRef.current;
+      if (!player) return;
+      if (action === "play") {
+        player.seekTo(videoTime, true);
+        player.playVideo();
+      } else if (action === "pause") {
+        player.pauseVideo();
+      }
+    },
+  });
 
   // ✅ INP：useDeferredValue 讓 YouTube 更新不阻塞 keyboard 回應
   const deferredVideoId = useDeferredValue(videoId);
@@ -257,16 +282,47 @@ export default function App() {
       <Fireworks poseDataRef={poseDataRef} gestureDataRef={gestureDataRef} isLowEnd={isLowEnd} showDebug={showDebug}
         mode={`B-${sessionKey}`} onLMAUpdate={(lma) => { lmaDataRef.current = lma; }} />
 
-      <DraggableSkeleton scale={skeletonScale} visible={showSkeleton} onHide={() => setShowSkeleton(false)}
-        width={isLandscapePhone ? windowHeight * 0.8 : 600}
-        height={isLandscapePhone ? windowHeight * 0.8 : 600}
-        initialPosition={isLandscapePhone ? { top: "5%", left: "15%" } : { top: "10%", left: "25%" }} transparent>
-        {poseReady && (
-          <PoseSkeleton onPoseUpdate={(d) => { poseDataRef.current = d; }} onGestureData={(d) => { gestureDataRef.current = d; }}
-            hideCanvas={!showSkeleton} isLowEnd={isLowEnd}
-            skeletonCanvasRef={skeletonCanvasRef} lmaDataRef={lmaDataRef} showDebug={showDebug} />
-        )}
-      </DraggableSkeleton>
+      {/* ── 本地骨架 ──────────────────────────────────────────────── */}
+      {poseReady && showSkeleton && (
+        <DraggableSkeleton
+          scale={skeletonScale}
+          width="480px"
+          height="270px"
+          defaultPosition={{ x: windowWidth / 2 - 500, y: windowHeight / 2 - 135 }}
+        >
+          <PoseSkeleton
+            skeletonCanvasRef={skeletonCanvasRef}
+            isLowEnd={isLowEnd}
+            lmaDataRef={lmaDataRef}
+            showDebug={showDebug}
+            colorPose={rtcRole === "p2" ? "#ff6bff" : "#e6ffdf"}
+            colorHand={rtcRole === "p2" ? "#ff9fff" : "#ffffff"}
+            onPoseUpdate={(pd) => {
+              poseDataRef.current = pd;
+              sendPose(pd);
+            }}
+            onGestureData={(gd) => { gestureDataRef.current = gd; }}
+          />
+        </DraggableSkeleton>
+      )}
+
+      {/* ── 對方骨架 ──────────────────────────────────────────────── */}
+      {remotePose && (
+        <DraggableSkeleton
+          width="480px"
+          height="270px"
+          defaultPosition={{ x: windowWidth / 2 + 20, y: windowHeight / 2 - 135 }}
+        >
+          <RemoteSkeleton poseData={remotePose} isLowEnd={isLowEnd} colorPose={rtcRole === "p2" ? "#e6ffdf" : "#ff6bff"} colorHand={rtcRole === "p2" ? "#ffffff" : "#ff9fff"} />
+        </DraggableSkeleton>
+      )}
+
+      {/* ── RTC 連線面板 ──────────────────────────────────────────── */}
+      <RTCPanel
+        status={rtcStatus}
+        onConnect={(id, role) => { setRtcRoom(id); setRtcRole(role); }}
+        onDisconnect={() => { setRtcRoom(null); setRtcRole(null); setRemotePose(null); }}
+      />
 
       <style>{`
         @keyframes spin {
@@ -546,7 +602,8 @@ export default function App() {
           <DraggableYouTube videoId={deferredVideoId}
             width={isLandscapePhone ? 240 : 320}
             height={isLandscapePhone ? 135 : 180}
-            initialPosition={{ top: 20, left: windowWidth - (isLandscapePhone ? 260 : 340) }} />
+            initialPosition={{ top: 20, left: windowWidth - (isLandscapePhone ? 260 : 340) }}
+            onPlayerReady={(player) => { ytPlayerRef.current = player; }} />
         </Suspense>
       )}
     </main>

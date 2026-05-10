@@ -12,6 +12,8 @@ export default function PoseSkeleton({
   skeletonCanvasRef = null,
   lmaDataRef = null,
   showDebug = false,
+  colorPose = "#e6ffdf",
+  colorHand = "#ffffff",
 }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -23,9 +25,13 @@ export default function PoseSkeleton({
   const onPoseUpdateRef = useRef(onPoseUpdate);
   const onGestureDataRef = useRef(onGestureData);
   const hideCanvasRef = useRef(hideCanvas);
+  const colorPoseRef = useRef(colorPose);
+  const colorHandRef = useRef(colorHand);
   useEffect(() => { onPoseUpdateRef.current = onPoseUpdate; }, [onPoseUpdate]);
   useEffect(() => { onGestureDataRef.current = onGestureData; }, [onGestureData]);
   useEffect(() => { hideCanvasRef.current = hideCanvas; }, [hideCanvas]);
+  useEffect(() => { colorPoseRef.current = colorPose; }, [colorPose]);
+  useEffect(() => { colorHandRef.current = colorHand; }, [colorHand]);
 
   const dist = (p1, p2) => Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
 
@@ -34,7 +40,7 @@ export default function PoseSkeleton({
     if (holisticRef.current) {
       holisticRef.current.setOptions({
         modelComplexity: 0,
-        smoothLandmarks: false,
+        smoothLandmarks: true,
         minDetectionConfidence: isLowEnd ? 0.4 : 0.5,
         minTrackingConfidence: isLowEnd ? 0.4 : 0.5,
         enableFaceGeometry: false,
@@ -84,7 +90,7 @@ export default function PoseSkeleton({
     holisticRef.current = holistic;
     holistic.setOptions({
       modelComplexity: 0,
-      smoothLandmarks: false,
+      smoothLandmarks: true,
       minDetectionConfidence: isLowEndRef.current ? 0.4 : 0.5,
       minTrackingConfidence: isLowEndRef.current ? 0.4 : 0.5,
       enableFaceGeometry: false,
@@ -117,8 +123,8 @@ export default function PoseSkeleton({
       ctx.scale(-1, 1);
 
       const lineW = isLowEndRef.current ? 3 : 6;
-      const colorPose = "#e6ffdf";
-      const colorHand = "#ffffff";
+      const colorPose = colorPoseRef.current;
+      const colorHand = colorHandRef.current;
 
       if (results.poseLandmarks) {
         const poseSafeConnections = POSE_CONNECTIONS.filter(([a, b]) =>
@@ -256,8 +262,13 @@ export default function PoseSkeleton({
           leftKnee: flip(results.poseLandmarks?.[25]),
           rightKnee: flip(results.poseLandmarks?.[26]),
           leftHandGesture: leftG,
-          rightHandGesture: rightG
+          rightHandGesture: rightG,
+          // ── 新增 ──
+          poseLandmarks: results.poseLandmarks?.map(flip) ?? null,
+          leftHandLandmarks: results.leftHandLandmarks?.map(flip) ?? null,
+          rightHandLandmarks: results.rightHandLandmarks?.map(flip) ?? null,
         });
+
       }
       draw(results);
     });

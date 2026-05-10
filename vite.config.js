@@ -1,9 +1,11 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import basicSsl from '@vitejs/plugin-basic-ssl'
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(),basicSsl()],
   base: "/SparkBody/",
+  define: { global: 'globalThis' },  // ← 加這行
   optimizeDeps: {
     include: [
       "@mediapipe/holistic",
@@ -26,5 +28,12 @@ export default defineConfig({
   server: {
     hmr: { overlay: false },
     watch: { ignored: ['**/node_modules/**', '**/dist/**'] },
+    proxy: {
+      '/socket.io': {
+        target: 'http://10.1.1.15:3000',
+        ws: true,
+        changeOrigin: true,
+      }
+    }
   },
 })
