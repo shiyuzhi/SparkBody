@@ -1,8 +1,10 @@
 // src/RTCPanel.jsx
 import React, { useState } from "react";
 
-export default function RTCPanel({ status, onConnect, onDisconnect }) {
+export default function RTCPanel({ status, lang = "zh", onConnect, onDisconnect }) {
   const [roomId, setRoomId] = useState("");
+
+  const t = (zh, en) => lang === "zh" ? zh : en;
 
   const statusColor = {
     idle:         "#555",
@@ -12,17 +14,17 @@ export default function RTCPanel({ status, onConnect, onDisconnect }) {
   }[status] ?? "#555";
 
   const statusLabel = {
-    idle:         "未連線",
-    connecting:   "等待對方...",
-    connected:    "● 已連線",
-    disconnected: "已斷線",
-  }[status] ?? "未連線";
+    idle:         t("未連線", "Idle"),
+    connecting:   t("等待對方...", "Waiting..."),
+    connected:    t("● 已連線", "● Connected"),
+    disconnected: t("已斷線", "Disconnected"),
+  }[status] ?? t("未連線", "Idle");
 
   if (status === "connected") {
     return (
       <div style={panelStyle(statusColor)}>
         <div style={labelStyle(statusColor)}>🔗 RTC {statusLabel}</div>
-        <button onClick={onDisconnect} style={btnStyle("#f44")}>斷線</button>
+        <button onClick={onDisconnect} style={btnStyle("#f44")}>{t("斷線", "Disconnect")}</button>
       </div>
     );
   }
@@ -42,15 +44,15 @@ export default function RTCPanel({ status, onConnect, onDisconnect }) {
       <input
         value={roomId}
         onChange={e => setRoomId(e.target.value)}
-        placeholder="房間號碼"
+        placeholder={t("房間號碼", "Room ID")}
         style={inputStyle}
       />
       <div style={{ display: "flex", gap: 6 }}>
         <button onClick={() => roomId.trim() && onConnect(roomId.trim(), "p1")} style={btnStyle("#0ef")}>
-          建立
+          {t("建立", "Create")}
         </button>
         <button onClick={() => roomId.trim() && onConnect(roomId.trim(), "p2")} style={btnStyle("#f80")}>
-          加入
+          {t("加入", "Join")}
         </button>
       </div>
     </div>

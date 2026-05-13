@@ -54,6 +54,7 @@ export default function App() {
   const [rtcRoom, setRtcRoom] = useState(null);
   const [rtcRole, setRtcRole] = useState(null);
   const [remotePose, setRemotePose] = useState(null);
+  const [lang, setLang] = useState("zh");
   const ytPlayerRef = useRef(null);
 
   const { status: rtcStatus, sendPose, sendYtSync } = useRTC({
@@ -209,7 +210,7 @@ export default function App() {
           <div key={cat}>
             <div className={`cat-row${active ? " active" : ""}`}
               onClick={() => setExpandedCat(active ? null : cat)}>
-              <span>{displayNames[cat] ?? cat}</span>
+              <span>{lang === "zh" ? cat : (displayNames[cat] ?? cat)}</span>
               <span className="cat-arrow">▶</span>
             </div>
             {active && (
@@ -238,7 +239,7 @@ export default function App() {
             <div className={`cat-row${active ? " active" : ""}`}
               style={{ color: "rgba(255,255,255,0.35)" }}
               onClick={() => setExpandedCat(active ? null : "__other__")}>
-              <span>{displayNames["其他"] ?? "Other"}</span>
+              <span>{lang === "zh" ? "其他" : "Other"}</span>
               <span className="cat-arrow">▶</span>
             </div>
             {active && (
@@ -320,6 +321,7 @@ export default function App() {
       {/* ── RTC 連線面板 ──────────────────────────────────────────── */}
       <RTCPanel
         status={rtcStatus}
+        lang={lang}
         onConnect={(id, role) => { setRtcRoom(id); setRtcRole(role); }}
         onDisconnect={() => { setRtcRoom(null); setRtcRole(null); setRemotePose(null); }}
       />
@@ -517,12 +519,12 @@ export default function App() {
               border: `1px solid ${isConfirmed ? "#0ef" : "#f66"}`, borderRadius: 6,
               padding: "3px 8px", color: isConfirmed ? "#0ef" : "#f88",
               fontSize: "0.65rem", cursor: "pointer", fontFamily: "monospace", whiteSpace: "nowrap" }}>
-            {isConfirmed ? `👤 ${currentUserId}` : "Set Participant"}
+            {isConfirmed ? `👤 ${currentUserId}` : (lang === "zh" ? "設定參與者" : "Set Participant")}
           </button>
           {isConfirmed && (
             <button onClick={resetSession} className="btn btn-sm btn-outline-warning"
               style={{ fontSize: "0.6rem", padding: "2px 5px" }}>
-              NEXT ▶
+              {lang === "zh" ? "下一位 ▶" : "NEXT ▶"}
             </button>
           )}
           <div onClick={() => setShowDebug(v => !v)}
@@ -550,7 +552,7 @@ export default function App() {
               color: showGuide ? "#FF6B2B" : "#fff",
               fontSize: "0.75rem", fontFamily: "monospace", whiteSpace: "nowrap",
             }}>
-            Action Guide
+            {lang === "zh" ? "動作指南" : "Action Guide"}
           </button>
 
           <a href="https://forms.gle/fmD9XYixYHLLrjQP6" target="_blank" rel="noopener noreferrer"
@@ -565,12 +567,12 @@ export default function App() {
               handleUrlChange(e);
             }}
             className="yt-input d-none d-md-block"
-            placeholder="貼上 YouTube 連結" />
+            placeholder={lang === "zh" ? "貼上 YouTube 連結" : "Paste YouTube URL"} />
 
           <div className={`music-trigger${isMenuOpen ? " open" : ""}`}
             onClick={() => { setIsMenuOpen(v => !v); setExpandedCat(null); }}>
             <span>♩</span>
-            {windowWidth >= 768 && <span>Song Selection</span>}
+            {windowWidth >= 768 && <span>{lang === "zh" ? "選歌" : "Song Selection"}</span>}
             <span className="arr">▼</span>
           </div>
 
@@ -578,8 +580,18 @@ export default function App() {
 
           <div className={`show-btn${showMusic ? " on" : ""}`}
             onClick={() => { setShowMusic(v => !v); drumKit.init(); }}>
-            🎵 Music
+            {lang === "zh" ? "🎵 音樂" : "🎵 Music"}
           </div>
+
+          <button
+            onClick={() => setLang(l => l === "zh" ? "en" : "zh")}
+            style={{
+              background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.18)",
+              borderRadius: 6, padding: "3px 8px", color: "rgba(255,255,255,0.6)",
+              fontSize: "0.65rem", cursor: "pointer", fontFamily: "monospace", flexShrink: 0,
+            }}>
+            {lang === "zh" ? "EN" : "中文"}
+          </button>
         </div>
       </div>
 
