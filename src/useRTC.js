@@ -2,8 +2,8 @@
 import { useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
 
-const SIGNAL_SERVER = ""; // 透過 Vite proxy 轉發到本地 Socket.IO 伺服器  
-const ICE_SERVERS = [];
+const SIGNAL_SERVER = "https://imuse.ncnu.edu.tw/rtc";
+const ICE_SERVERS = [{ urls: "stun:stun.l.google.com:19302" }];
 
 export function useRTC({ roomId, role, onPoseData, onYtSync }) {
   const dcRef        = useRef(null);

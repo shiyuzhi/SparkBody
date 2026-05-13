@@ -4,7 +4,7 @@ import basicSsl from '@vitejs/plugin-basic-ssl'
 
 export default defineConfig({
   plugins: [react(),basicSsl()],
-  base: "/SparkBody/",
+  base: "/SparkBody.HP/",
   define: { global: 'globalThis' },  // ← 加這行
   optimizeDeps: {
     include: [
@@ -28,12 +28,5 @@ export default defineConfig({
   server: {
     hmr: { overlay: false },
     watch: { ignored: ['**/node_modules/**', '**/dist/**'] },
-    proxy: {
-      '/socket.io': {
-        target: 'http://10.1.1.15:3000',
-        ws: true,
-        changeOrigin: true,
-      }
-    }
   },
 })
