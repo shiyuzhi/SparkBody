@@ -20,7 +20,8 @@ export function useRTC({ roomId, role, onPoseData, onYtSync }) {
   useEffect(() => {
     if (!roomId || !role) return;
 
-    const socket = io(SIGNAL_SERVER, {
+    const socket = io("https://imuse.ncnu.edu.tw", {
+      path: "/rtc/socket.io",
       extraHeaders: { "ngrok-skip-browser-warning": "1" }
     });
     const pcRef  = { current: null };
