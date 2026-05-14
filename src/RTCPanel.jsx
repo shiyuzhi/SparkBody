@@ -1,6 +1,8 @@
 // src/RTCPanel.jsx
 import React, { useState } from "react";
 
+const genRoom = () => Math.floor(Math.random() * 1000).toString().padStart(3, "0");
+
 export default function RTCPanel({ status, lang = "zh", onConnect, onDisconnect }) {
   const [roomId, setRoomId] = useState("");
 
@@ -48,7 +50,11 @@ export default function RTCPanel({ status, lang = "zh", onConnect, onDisconnect 
         style={inputStyle}
       />
       <div style={{ display: "flex", gap: 6 }}>
-        <button onClick={() => roomId.trim() && onConnect(roomId.trim(), "p1")} style={btnStyle("#0ef")}>
+        <button onClick={() => {
+          const id = genRoom();
+          setRoomId(id);
+          onConnect(id, "p1");
+        }} style={btnStyle("#0ef")}>
           {t("建立", "Create")}
         </button>
         <button onClick={() => roomId.trim() && onConnect(roomId.trim(), "p2")} style={btnStyle("#f80")}>
